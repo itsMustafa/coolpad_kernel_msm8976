@@ -78,3 +78,4 @@ obj-$(CONFIG_INFRARED_UEI1700)	+= uei1700.o
 obj-$(CONFIG_USB_TYPE_C_LEECO)		+= type-c-leeco/
 obj-$(CONFIG_GET_HARDWARE_INFO)		+= hardware_info.o
 obj-$(CONFIG_UID_SYS_STATS) += uid_sys_stats.o
+obj-$(CONFIG_USB_TYPE_C_LEECO)		+= type-c-leeco/
