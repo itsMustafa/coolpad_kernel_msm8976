@@ -190,14 +190,10 @@ static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 static char led_pwm1[3] = {0x51, 0x0F, 0xFF};	/* DTYPE_DCS_WRITE1 */
 static char led_diming_mode[2] = {0x53, 0x2c};	/* DTYPE_DCS_WRITE1 */
 static char led_cabc_mode[2] = {0x55, 0x03};	/* DTYPE_DCS_WRITE1 */
-
 static struct dsi_cmd_desc backlight_cmd[] = {
 	{{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_diming_mode)},led_diming_mode},
 	{{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_cabc_mode)},led_cabc_mode},
 	{{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm1)},led_pwm1},
-};
-static struct dsi_cmd_desc  diming_enable_cmd = {
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_diming_mode)},led_diming_mode
 };
 
 #else
@@ -207,8 +203,6 @@ static struct dsi_cmd_desc backlight_cmd = {
 	led_pwm1
 };
 #endif
-char currtask_name[FIELD_SIZEOF(struct task_struct, comm) + 1];
-static u32 kernel_level_first = 1;
 
 static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 {
@@ -263,22 +257,6 @@ static void  oem_dimming_enable(struct mdss_dsi_ctrl_pdata *ctrl,bool enable)
 {
 	struct dcs_cmd_req cmdreq;
 	struct mdss_panel_info *pinfo;
-
-	pinfo = &(ctrl->panel_data.panel_info);
-	if (pinfo->dcs_cmd_by_left) {
-		if (ctrl->ndx != DSI_CTRL_LEFT)
-			return;
-	}
-
-	pr_debug("%s: lcd dimming enable %d\n", __func__, enable);
-
-	if(enable)
-		led_diming_mode[1] = 0x2c;
-	else
-		led_diming_mode[1] = 0x24;
-
-	memset(&cmdreq, 0, sizeof(cmdreq));
-	cmdreq.cmds = &diming_enable_cmd;
 
 #ifdef CONFIG_FB_MSM_MDSS_BACKLIGHT_LEECO
 	led_pwm1[1] = (unsigned char)(level>>8);
@@ -2035,7 +2013,6 @@ int mdss_panel_parse_bl_settings(struct device_node *np,
 			pr_debug("%s: SUCCESS-> WLED TRIGGER register\n",
 				__func__);
 #endif
-
 			ctrl_pdata->bklt_ctrl = BL_DCS_CMD;
 			pr_debug("%s: Configured DCS_CMD bklt ctrl\n",
 								__func__);
