@@ -51,7 +51,13 @@
 #include <linux/qpnp/qpnp-adc.h>
 
 #include <linux/msm-bus.h>
-
+#ifdef CONFIG_USB_TYPE_C_LEECO
+#include <linux/type-c_notify.h>
+#endif
+#if defined(CONFIG_FB)
+#include <linux/notifier.h>
+#include <linux/fb.h>
+#endif
 #define MSM_USB_BASE	(motg->regs)
 #define MSM_USB_PHY_CSR_BASE (motg->phy_csr_regs)
 
@@ -78,6 +84,22 @@
 
 #define USB_DEFAULT_SYSTEM_CLOCK 80000000	/* 80 MHz */
 
+#define PM_QOS_SAMPLE_SEC	2
+#define PM_QOS_THRESHOLD	400
+
+#ifdef CONFIG_USB_TYPE_C_LEECO
+extern int headset_vbus_status;
+static int usb_audio_mode_status = 0;
+static int otg_vbus_status = 1;
+extern int cclogic_get_audio_mode(void);
+extern int letv_audio_mode_supported(void *data);
+extern void tiusb_audio_mode_set(bool mode);
+extern void ptn5150_usb_audio_mode_set(bool mode);
+extern bool is_ti_type_c_register;
+extern bool is_nxp_type_c_register;
+static int usb_audio_suspend_status = 0;
+#endif
+
 enum msm_otg_phy_reg_mode {
 	USB_PHY_REG_OFF,
 	USB_PHY_REG_ON,
@@ -95,7 +117,7 @@ module_param(lpm_disconnect_thresh , uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(lpm_disconnect_thresh,
 	"Delay before entering LPM on USB disconnect");
 
-static bool floated_charger_enable=1;
+static bool floated_charger_enable;
 module_param(floated_charger_enable , bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(floated_charger_enable,
 	"Whether to enable floated charger");
@@ -130,8 +152,9 @@ static struct power_supply *psy;
 
 static bool aca_id_turned_on;
 static bool legacy_power_supply;
-extern bool is_detecting_usb_type;
-#ifdef CONFIG_TYPE_C_INFO
+
+#ifdef CONFIG_USB_TYPE_C_LEECO
+
 #define WAIT_OTG_POWER_TIMEOUT_MS    msecs_to_jiffies(100) /* 100ms */
 static u8 otg_power_on = 0;
 static wait_queue_head_t    set_otg_power_wait;
@@ -154,12 +177,7 @@ static int typec_set_otg_power_notifier(struct notifier_block *self,unsigned lon
     return NOTIFY_OK;
 }
 #endif
-<<<<<<< HEAD
-=======
 
->>>>>>> e4eb5d50bd1... sound/type-c: import leeco changes from IIXOSOP5801607291S
-=======
->>>>>>> parent of e4eb5d50bd1... sound/type-c: import leeco changes from IIXOSOP5801607291S
 static inline bool aca_enabled(void)
 {
 #ifdef CONFIG_USB_MSM_ACA
@@ -2173,6 +2191,8 @@ static void msm_otg_start_host(struct usb_otg *otg, int on)
 				motg->inputs, otg->phy->state);
 
 		wake_up(&motg->host_suspend_wait);
+		pm_runtime_disable(&hcd->self.root_hub->dev);
+		pm_runtime_barrier(&hcd->self.root_hub->dev);
 		usb_remove_hcd(hcd);
 
 		if (pdata->enable_axi_prefetch)
@@ -2295,21 +2315,10 @@ static void msm_hsusb_vbus_power(struct msm_otg *motg, bool on)
 	 */
 	if (on) {
 		msm_otg_notify_host_mode(motg, on);
-<<<<<<< HEAD
-<<<<<<< HEAD
-#ifdef CONFIG_TYPE_C_INFO
-        wait_event_interruptible_timeout(
-        set_otg_power_wait,
-        (1 == otg_power_on),
-        WAIT_OTG_POWER_TIMEOUT_MS);
-=======
 #ifdef CONFIG_USB_TYPE_C_LEECO
 		wait_event_interruptible_timeout(set_otg_power_wait, (1 == otg_power_on),
 				WAIT_OTG_POWER_TIMEOUT_MS);
->>>>>>> e4eb5d50bd1... sound/type-c: import leeco changes from IIXOSOP5801607291S
 #endif
-=======
->>>>>>> parent of e4eb5d50bd1... sound/type-c: import leeco changes from IIXOSOP5801607291S
 		ret = regulator_enable(vbus_otg);
 		if (ret) {
 			pr_err("unable to enable vbus_otg\n");
@@ -2326,6 +2335,8 @@ static void msm_hsusb_vbus_power(struct msm_otg *motg, bool on)
 		vbus_is_on = false;
 	}
 }
+
+#ifdef CONFIG_USB_TYPE_C_LEECO
 void msm_otg_vbus_power_set(bool enable)
 {
 	int ret;
@@ -2335,6 +2346,8 @@ void msm_otg_vbus_power_set(bool enable)
 		if (ret) {
 			pr_err("unable to enable vbus_otg\n");
 			return;
+		}else{
+			otg_vbus_status = 1;
 		}
 	} else {
 		pr_info("%s: disable vbus\n", __func__);
@@ -2342,9 +2355,44 @@ void msm_otg_vbus_power_set(bool enable)
 		if (ret) {
 			pr_err("unable to disable vbus_otg\n");
 			return;
+		}else{
+			otg_vbus_status = 0;
 		}
 	}
 }
+#if defined(CONFIG_FB)
+static int usbheadset_resume_pm_event(struct notifier_block *notifier,
+   unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	struct msm_otg *motg =container_of(notifier, struct msm_otg, fb_notif);
+	int *blank;
+	if (!motg) {
+		printk(KERN_ERR" motg is null!\n");
+		return 0;
+	}
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		blank = evdata->data;
+		if (*blank == FB_BLANK_UNBLANK){
+			if ((usb_audio_mode_status == 0)&&(usb_audio_suspend_status == 1)) {
+			printk("%s:set audio mode\n",__func__);
+				if (is_nxp_type_c_register) {
+					ptn5150_usb_audio_mode_set(false);
+				}
+				if (is_ti_type_c_register) {
+					tiusb_audio_mode_set(false);
+				}
+			}
+			usb_audio_suspend_status = 0;
+			usb_audio_mode_status = 1;
+		}else{
+			usb_audio_mode_status= 1;
+		}
+	}
+	return 0;
+}
+#endif
+#endif
 
 static int msm_otg_set_host(struct usb_otg *otg, struct usb_bus *host)
 {
@@ -3236,7 +3284,7 @@ static void msm_chg_detect_work(struct work_struct *w)
 		if (motg->chg_type == USB_DCP_CHARGER)
 			ulpi_write(phy, 0x2, 0x85);
 
-		dev_info(phy->dev, "chg_type = %s\n",
+		dev_dbg(phy->dev, "chg_type = %s\n",
 			chg_to_string(motg->chg_type));
 		msm_otg_dbg_log_event(phy, "CHG WORK: CHG_TYPE",
 				motg->chg_type, motg->inputs);
@@ -4503,25 +4551,6 @@ static irqreturn_t msm_id_irq(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-#ifdef CONFIG_YL_FAIRCHILDIC_USB_TYPEC
-static struct msm_otg *motg_for_typec = NULL;
-static int otg_power_set_property_usb(struct power_supply *psy,
-		enum power_supply_property psp,
-		const union power_supply_propval *val);
-/* DFP turn on vbus for UFP
- * on = 1 turn on the vbus
- * on = 0 turn off the vbus
- */
-void dfp_vbus_switch(int on)
-{
-	union power_supply_propval val;
-
-	val.intval = on;
-	otg_power_set_property_usb(&motg_for_typec->usb_psy, POWER_SUPPLY_PROP_USB_OTG, &val);
-}
-EXPORT_SYMBOL(dfp_vbus_switch);
-#endif
-
 int msm_otg_pm_notify(struct notifier_block *notify_block,
 					unsigned long mode, void *unused)
 {
@@ -4907,13 +4936,7 @@ static int otg_power_get_property_usb(struct power_supply *psy,
 		break;
 	/* Reflect USB enumeration */
 	case POWER_SUPPLY_PROP_ONLINE:
-		if(is_detecting_usb_type) {
-			val->intval = 1;
-			pr_debug("%s: force usb online, psp %d, value %d.\n",
-				__func__, psp, val->intval);
-		} else {
-			val->intval = motg->online;
-		}
+		val->intval = motg->online;
 		break;
 	case POWER_SUPPLY_PROP_TYPE:
 		val->intval = psy->type;
@@ -5688,10 +5711,6 @@ static int msm_otg_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-#ifdef CONFIG_YL_FAIRCHILDIC_USB_TYPEC
-	motg_for_typec = motg;
-#endif
-
 	/*
 	 * USB Core is running its protocol engine based on CORE CLK,
 	 * CORE CLK  must be running at >55Mhz for correct HSUSB
@@ -5927,7 +5946,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto devote_bus_bw;
 	}
-	dev_info(&pdev->dev, "OTG regs = %p\n", motg->regs);
+	dev_info(&pdev->dev, "OTG regs = %pK\n", motg->regs);
 
 	if (pdata->enable_sec_phy) {
 		res = platform_get_resource_byname(pdev,
@@ -6355,18 +6374,11 @@ static int msm_otg_probe(struct platform_device *pdev)
 	register_pm_notifier(&motg->pm_notify);
 	msm_otg_dbg_log_event(phy, "OTG PROBE", motg->caps, motg->lpm_flags);
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-#ifdef CONFIG_TYPE_C_INFO
-=======
 #ifdef CONFIG_USB_TYPE_C_LEECO
->>>>>>> e4eb5d50bd1... sound/type-c: import leeco changes from IIXOSOP5801607291S
     init_waitqueue_head(&set_otg_power_wait);
     ret = type_c_otg_power_register_client(&typec_set_otg_power_notif);
     if (ret)
         pr_err("Unable to register typec_set_otg_power_notif: %d\n",ret);
-<<<<<<< HEAD
-=======
 #if defined(CONFIG_FB)
 	motg->fb_notif.notifier_call = usbheadset_resume_pm_event;
 	ret = fb_register_client(&motg->fb_notif);
@@ -6376,10 +6388,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 			__func__);
 		}
 #endif
->>>>>>> e4eb5d50bd1... sound/type-c: import leeco changes from IIXOSOP5801607291S
 #endif
-=======
->>>>>>> parent of e4eb5d50bd1... sound/type-c: import leeco changes from IIXOSOP5801607291S
 	return 0;
 
 remove_cdev:
@@ -6462,17 +6471,9 @@ static int msm_otg_remove(struct platform_device *pdev)
 		return -EBUSY;
 
 	unregister_pm_notifier(&motg->pm_notify);
-<<<<<<< HEAD
-<<<<<<< HEAD
-#ifdef CONFIG_TYPE_C_INFO
-    type_c_otg_power_unregister_client(&typec_set_otg_power_notif);
-=======
 #ifdef CONFIG_USB_TYPE_C_LEECO
 	type_c_otg_power_unregister_client(&typec_set_otg_power_notif);
->>>>>>> e4eb5d50bd1... sound/type-c: import leeco changes from IIXOSOP5801607291S
 #endif
-=======
->>>>>>> parent of e4eb5d50bd1... sound/type-c: import leeco changes from IIXOSOP5801607291S
 
 	if (!motg->ext_chg_device) {
 		device_destroy(motg->ext_chg_class, motg->ext_chg_dev);
@@ -6651,7 +6652,28 @@ static int msm_otg_pm_suspend(struct device *dev)
 	ret = msm_otg_suspend(motg);
 	if (ret)
 		atomic_set(&motg->pm_suspended, 0);
-
+#ifdef CONFIG_USB_TYPE_C_LEECO
+	if ((otg_vbus_status ==1)&&letv_audio_mode_supported(NULL)&&
+	    cclogic_get_audio_mode() == 0&&headset_vbus_status ==0) {
+		if(usb_audio_mode_status){
+		    if (is_nxp_type_c_register) {
+				ptn5150_usb_audio_mode_set(true);
+			}
+		    if (is_ti_type_c_register) {
+				tiusb_audio_mode_set(true);
+			}
+		usb_audio_mode_status = 0;
+		usb_audio_suspend_status = 1;
+		}
+	    printk("%s:closed otg-vbus\n",__func__);
+	    mdelay(100);
+	    msm_otg_vbus_power_set(false);
+	    mdelay(300);
+	}else if(usb_audio_mode_status == 0){
+	    msm_otg_vbus_power_set(false);
+	    mdelay(300);
+	}
+#endif
 	return ret;
 }
 
@@ -6661,6 +6683,11 @@ static int msm_otg_pm_resume(struct device *dev)
 	struct msm_otg *motg = dev_get_drvdata(dev);
 
 	dev_dbg(dev, "OTG PM resume\n");
+#ifdef CONFIG_USB_TYPE_C_LEECO
+	if((otg_vbus_status ==0)&&(usb_audio_mode_status == 0)&&(usb_audio_suspend_status == 1)){
+		msm_otg_vbus_power_set(true);
+	}
+#endif
 	msm_otg_dbg_log_event(&motg->phy, "PM RESUME START",
 			get_pm_runtime_counter(dev), motg->pm_done);
 
@@ -6720,3 +6747,4 @@ module_platform_driver(msm_otg_driver);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("MSM USB transceiver driver");
+

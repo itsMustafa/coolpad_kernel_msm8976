@@ -2178,3 +2178,4 @@ static void __exit fusb302_i2c_exit(void)
 
 module_init(fusb302_i2c_init);
 module_exit(fusb302_i2c_exit);
+
