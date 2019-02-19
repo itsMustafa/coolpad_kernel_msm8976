@@ -23,7 +23,6 @@
 /* [YULONG BEGIN] TFS_386825: modify for back mono camera - chaiyongliang_20160416 */
 char msm_sensor_module_info[3][MAX_SENSOR_NAME] = {"unknown", "unknown", "unknown"};
 /* [YULONG END] TFS_386825 - chaiyongliang_20160416 */
-
 int msm_sensor_module_info_set(enum msm_sensor_camera_id_t position, char *module_info)
 {
     if(position != CAMERA_0 && position != CAMERA_1)

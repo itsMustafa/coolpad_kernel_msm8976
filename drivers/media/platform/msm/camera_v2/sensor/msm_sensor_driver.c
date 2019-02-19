@@ -23,6 +23,10 @@
 #endif
 #include <linux/bootreason.h>
 
+#ifdef CONFIG_MSMB_CAMERA_LEECO
+#include "msm_sensor_module_info.h"
+#endif
+
 /* Logging macro */
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
@@ -737,9 +741,11 @@ int32_t msm_sensor_driver_probe(void *setting,
 			slave_info32->sensor_init_params;
 		slave_info->output_format =
 			slave_info32->output_format;
+#ifdef CONFIG_MSMB_CAMERA_LEECO
 		strlcpy(slave_info->sensor_module_info, slave_info32->sensor_module_info,
 			sizeof(slave_info->sensor_module_info));
 		slave_info->sensor_gpio_id = slave_info32->sensor_gpio_id;
+#endif
 		kfree(slave_info32);
 	} else
 #endif
@@ -908,14 +914,15 @@ CSID_TG:
 	s_ctrl->sensordata->eeprom_name = slave_info->eeprom_name;
 	s_ctrl->sensordata->actuator_name = slave_info->actuator_name;
 	s_ctrl->sensordata->ois_name = slave_info->ois_name;
-	/*Added by hanjianfeng for eeprom match of camera,LAFITE-421 (QL1530) 20160104,begin*/
+
+#ifdef CONFIG_MSMB_CAMERA_LEECO
 	if(strlen(s_ctrl->sensordata->eeprom_name) > 0 )
 	{
 		msm_sensor_module_info_get(slave_info->camera_id, module_info);
 		if(strcmp(module_info, s_ctrl->sensordata->eeprom_name) == 0)
 		{
 			pr_err("%s: eeprom module info match succ!want:%s,get:%s\n", __func__, s_ctrl->sensordata->eeprom_name, module_info);
-	}
+		}
 		else if(strcmp(module_info, "unknown") == 0)
 		{
 			pr_err("%s: eeprom module info match fail!because don't need to match by otp!\n", __func__);
@@ -930,7 +937,7 @@ CSID_TG:
 	{
 		pr_err("%s:eeprom module info match.This sensor have not config eeprom.", __func__);
 	}
-	/*Added by hanjianfeng for eeprom match of camera,LAFITE-421 (QL1530) 20160104,end*/
+#endif
 	/*
 	 * Update eeporm subdevice Id by input eeprom name
 	 */
@@ -960,9 +967,10 @@ CSID_TG:
 		pr_err("%s power up failed", slave_info->sensor_name);
 		goto free_camera_info;
 	}
-	/*Begin added by yangyongfeng for camera hardware info and camera gpio id (ql1530) 20151221 */
+
+#ifdef CONFIG_MSMB_CAMERA_LEECO
 	if(slave_info->sensor_module_info){
-		pr_err("tangjie sensor_module_info %s\n", slave_info->sensor_module_info);
+		pr_err("sensor_module_info %s\n", slave_info->sensor_module_info);
 		s_ctrl->sensordata->sensor_module_info = slave_info->sensor_module_info;
 	}
 	pr_err("sensor_gpio_id %d\n", slave_info->sensor_gpio_id);
@@ -1009,6 +1017,7 @@ CSID_TG:
 	 * probed on this slot
 	 */
 	s_ctrl->is_probe_succeed = 1;
+#endif
 
 	/*
 	 * Update the subdevice id of flash-src based on availability in kernel.

@@ -27,6 +27,7 @@ static struct v4l2_file_operations msm_eeprom_v4l2_subdev_fops;
 #endif
 
 /*Added by hanjianfeng for eeprom match of camera,LAFITE-421 (QL1530) 20160104,begin*/
+#ifdef CONFIG_MSMB_CAMERA_LEECO
 extern int msm_sensor_module_info_set(enum msm_sensor_camera_id_t position, char* module_info);
 /**
   * msm_eeprom_match_module - match module from otp data
@@ -112,7 +113,9 @@ static int msm_eeprom_match_module(struct device_node *of, struct msm_eeprom_ctr
 	CDBG("%s:XXX", __func__);
 	return rc;
 }
+
 /*Added by hanjianfeng for eeprom match of camera,LAFITE-421 (QL1530) 20160104,end*/
+#endif
 
 /**
   * msm_get_read_mem_size - Get the total size for allocation
@@ -1773,6 +1776,12 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 		rc = msm_eeprom_match_module(of_node, e_ctrl);
 		if(rc < 0)
 			pr_err("%s : to set camera module info with otp data fail!!", __func__);
+
+#ifdef CONFIG_MSMB_CAMERA_LEECO
+		rc = msm_eeprom_match_module(of_node, e_ctrl);
+		if(rc < 0)
+			pr_err("%s : to set camera module info with otp data fail!!", __func__);
+#endif
 
 		e_ctrl->is_supported |= msm_eeprom_match_crc(&e_ctrl->cal_data);
 
