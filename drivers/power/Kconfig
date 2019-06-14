@@ -592,6 +592,7 @@ config YL_CHARGER_PROPERTY
 	  report battery status to uplayer.
 
 source "drivers/power/reset/Kconfig"
+source "coolpad/drivers/power/Kconfig"
 
 endif # POWER_SUPPLY
 
