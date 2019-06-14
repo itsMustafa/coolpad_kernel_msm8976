@@ -81,7 +81,10 @@
 #define RPMB_SERVICE			0x2000
 #define SSD_SERVICE			0x3000
 
-#define QSEECOM_SEND_CMD_CRYPTO_TIMEOUT	2000
+/*< LAFITE-1145 resolve the issue Power consumption increase 50 mv by zhangbin 20160220 begin>*/
+//#define QSEECOM_SEND_CMD_CRYPTO_TIMEOUT	2000
+#define QSEECOM_SEND_CMD_CRYPTO_TIMEOUT	1000
+/*< LAFITE-1145 resolve the issue Power consumption increase 50 mv by zhangbin 20160220 end>*/
 #define QSEECOM_LOAD_APP_CRYPTO_TIMEOUT	2000
 #define TWO 2
 #define QSEECOM_UFS_ICE_CE_NUM 10

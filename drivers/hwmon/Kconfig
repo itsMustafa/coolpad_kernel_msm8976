@@ -1005,6 +1005,12 @@ config SENSORS_QPNP_CURRENT_MONITOR
 	  thresholds and gives notification to user-space via sysfs if
 	  buck's load current crosses the threshold.
 
+config NTC_12K_249K
+        bool "battery NTC is 12K&2.49K"
+        default n
+        help
+          Say Y to use battery NTC data of 12K&2.49K.
+
 config SENSORS_PC87360
 	tristate "National Semiconductor PC87360 family"
 	depends on !PPC

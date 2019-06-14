@@ -158,7 +158,9 @@ static int tz_init(struct devfreq_msm_adreno_tz_data *priv,
 		memcpy(tz_buf, tz_pwrlevels, size_pwrlevels);
 		/* Ensure memcpy completes execution */
 		mb();
-		dmac_flush_range(tz_buf, tz_buf + PAGE_ALIGN(size_pwrlevels));
+        /*< LAFITE-7221 wanghao 20160407 begin */
+        dmac_flush_range(tz_buf, (void *)tz_buf + PAGE_ALIGN(size_pwrlevels));
+        /* LAFITE-7221 wanghao 20160407 end >*/
 
 		desc.args[0] = virt_to_phys(tz_buf);
 		desc.args[1] = size_pwrlevels;

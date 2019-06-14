@@ -31,3 +31,9 @@ config DIAGFWD_BRIDGE_CODE
 	help
 	 SMUX/HSIC Transport Layer for DIAG Router
 endmenu
+
+config QXDM_CMD
+	bool "Enable QXDM CMD for sprint"
+	default n
+	help
+	 create mdiag device in /dev/

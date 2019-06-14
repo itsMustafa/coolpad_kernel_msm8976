@@ -694,3 +694,18 @@ source "arch/arm64/crypto/Kconfig"
 endif
 
 source "lib/Kconfig"
+#/*< LAFITE-237 xingbin 20151218 begin */
+source "arch/arm64/product_list/Kconfig"
+#/* LAFITE-237 xingbin 20151218 end >*/
+
+config APP_PROFILE
+	bool "Enable app profile feature"
+	depends on ARCH_MSM
+	help
+	  Enable app profile to control cpu adn gpu freq
+
+config YL_SET_VOLTAGE_LEVEL
+	bool "Set voltage level"
+	depends on ARCH_MSM
+	  help
+	  Set voltage level

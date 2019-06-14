@@ -3982,13 +3982,95 @@ static int _register_device(struct kgsl_device *device)
 	dev_set_drvdata(&device->pdev->dev, device);
 	return 0;
 }
+#ifdef CONFIG_APP_PROFILE
+static struct kgsl_device *device_t;
+static int gpu_freq_notify(struct notifier_block *b,
+		unsigned long l, void *v);
+
+static struct notifier_block min_gpufreq_notifier = {
+	.notifier_call = gpu_freq_notify,
+};
+static struct notifier_block max_gpufreq_notifier = {
+	.notifier_call = gpu_freq_notify,
+};
+
+static int get_nearest_pwrlevel(struct kgsl_pwrctrl *pwr, unsigned int clock)
+{
+	int i;
+
+	for (i = pwr->num_pwrlevels - 1; i >= 0; i--) {
+		if (abs(pwr->pwrlevels[i].gpu_freq >= clock))
+			break;
+	}
+
+	if (i < 0)
+		return 0;
+	else if (i >= pwr->num_pwrlevels - 1)
+		return pwr->num_pwrlevels - 1;
+
+	if (abs(pwr->pwrlevels[i].gpu_freq - clock) <
+		abs(pwr->pwrlevels[i+1].gpu_freq - clock))
+		return i;
+	else
+		return i + 1;
+}
+
+static int gpu_freq_notify(struct notifier_block *b,
+		unsigned long l, void *v)
+{
+	unsigned int qmin, qmax;
+	int max_level, min_level;
+	struct kgsl_pwrctrl *pwr = &device_t->pwrctrl;
+
+	qmin = pm_qos_request(PM_QOS_GPU_FREQ_MIN);
+	qmax = pm_qos_request(PM_QOS_GPU_FREQ_MAX);
+
+	if (qmin < pwr->pwrlevels[pwr->num_pwrlevels - 2].gpu_freq)
+		qmin = pwr->pwrlevels[pwr->num_pwrlevels - 2].gpu_freq;
+
+	if (qmax > pwr->pwrlevels[0].gpu_freq)
+		qmax = pwr->pwrlevels[0].gpu_freq;
+
+	if (qmin > qmax)
+		qmin = qmax;
+
+	/* printk("gpu qmin = %d,qmax = %d\n",qmin, qmax); */
+	max_level = get_nearest_pwrlevel(pwr, qmax);
+	if (max_level < 0) {
+		pr_debug("error gpu max freq(%d) is set!\n", qmax);
+		goto done;
+	}
+
+	if (max_level != pwr->appf_max_pwrlevel)
+		kgsl_pwrctrl_appf_max_gpuclk_set(device_t, max_level);
+
+	min_level = get_nearest_pwrlevel(pwr, qmin);
+	if (min_level < 0) {
+		pr_debug("error gpu min freq(%d) is set!\n", qmin);
+		goto done;
+	}
+
+	if (min_level != pwr->appf_min_pwrlevel)
+		kgsl_pwrctrl_appf_min_gpuclk_set(device_t, min_level);
+
+done:
+
+	return NOTIFY_OK;
+}
+#endif
 
 int kgsl_device_platform_probe(struct kgsl_device *device)
 {
 	int status = -EINVAL;
 	struct resource *res;
+#ifdef CONFIG_APP_PROFILE
+	int rc;
+#endif
 	int cpu;
 
+#ifdef CONFIG_APP_PROFILE
+	device_t = device;
+#endif
 	status = _register_device(device);
 	if (status)
 		return status;
@@ -4162,6 +4244,15 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 
 	/* Initialize common sysfs entries */
 	kgsl_pwrctrl_init_sysfs(device);
+
+#ifdef CONFIG_APP_PROFILE
+	rc = pm_qos_add_notifier(PM_QOS_GPU_FREQ_MIN,
+			&min_gpufreq_notifier);
+	BUG_ON(rc);
+	rc = pm_qos_add_notifier(PM_QOS_GPU_FREQ_MAX,
+			&max_gpufreq_notifier);
+	BUG_ON(rc);
+#endif
 
 	dev_info(device->dev, "Initialized %s: mmu=%s\n", device->name,
 		kgsl_mmu_enabled() ? "on" : "off");

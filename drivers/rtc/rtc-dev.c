@@ -268,6 +268,9 @@ static long rtc_dev_ioctl(struct file *file,
 
 	switch (cmd) {
 	case RTC_ALM_READ:
+         /*LAFITE-4403:yuquan added begin:add alarm debug log*/
+         printk("%s() RTC_ALM_READ\n",__func__);
+         /*LAFITE-4403:yuquan adde end:add alarm debug log*/
 		mutex_unlock(&rtc->ops_lock);
 
 		err = rtc_read_alarm(rtc, &alarm);
@@ -279,6 +282,9 @@ static long rtc_dev_ioctl(struct file *file,
 		return err;
 
 	case RTC_ALM_SET:
+         /*LAFITE-4403:yuquan added begin:add alarm debug log*/
+         printk("%s() RTC_ALM_SET\n",__func__);
+         /*LAFITE-4403:yuquan added end:add alarm debug log*/
 		mutex_unlock(&rtc->ops_lock);
 
 		if (copy_from_user(&alarm.time, uarg, sizeof(tm)))

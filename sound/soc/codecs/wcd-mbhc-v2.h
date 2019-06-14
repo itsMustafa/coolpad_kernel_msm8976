@@ -27,6 +27,12 @@
 #define WCD_MBHC_STRINGIFY(s)  __stringify(s)
 
 struct wcd_mbhc;
+#ifdef S2_AUDIO_FEATURE
+/* < LAFITE-1304 chaofubang 20160204 begin */
+extern bool is_type_c_headset_inserted;
+/* LAFITE-1304 chaofubang 20160204 end >*/
+#endif //chenshuyun add
+
 enum wcd_mbhc_register_function {
 	WCD_MBHC_L_DET_EN,
 	WCD_MBHC_GND_DET_EN,
@@ -380,10 +386,20 @@ struct wcd_mbhc {
 	bool is_extn_cable;
 	bool skip_imped_detection;
 	bool is_btn_already_regd;
+	#ifdef S2_AUDIO_FEATURE
+	/*< LAFITE-1817 chaofubang 20160302 begin */
+	int hph_det_gpio;
+	/* LAFITE-1817 chaofubang 20160302 end >*/
+	#endif //chenshuyun add
 
 	struct snd_soc_codec *codec;
 	/* Work to perform MBHC Firmware Read */
 	struct delayed_work mbhc_firmware_dwork;
+	#ifdef S2_AUDIO_FEATURE
+	/*< LAFITE-293 chaofubang 20160113 begin */
+	struct delayed_work headset_bootup_insert_work;
+	/* LAFITE-293 chaofubang 20160113 end >*/
+	#endif //chenshuyun add
 	const struct firmware *mbhc_fw;
 	struct firmware_cal *mbhc_cal;
 
@@ -415,6 +431,13 @@ struct wcd_mbhc {
 	struct completion btn_press_compl;
 	struct mutex hphl_pa_lock;
 	struct mutex hphr_pa_lock;
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-960 chaofubang 20160127 begin */
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *debugfs_mbhc;
+#endif
+/* LAFITE-960 chaofubang 20160127 end >*/
+#endif //chenshuyun add
 };
 #define WCD_MBHC_CAL_SIZE(buttons, rload) ( \
 	sizeof(struct wcd_mbhc_general_cfg) + \
@@ -480,6 +503,11 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 		      bool impedance_det_en);
 int wcd_mbhc_get_impedance(struct wcd_mbhc *mbhc, uint32_t *zl,
 			   uint32_t *zr);
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-293 chaofubang 20151228 begin */
+void wcd_mbhc_mech_plug_detect(void);
+/* LAFITE-293 chaofubang 20151228 end >*/
+#endif //chenshuyun add
 #else
 static inline void wcd_mbhc_stop(struct wcd_mbhc *mbhc)
 {

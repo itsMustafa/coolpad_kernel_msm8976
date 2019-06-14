@@ -472,6 +472,9 @@ struct diagchar_dev {
 	struct list_head cmd_reg_list;
 	struct mutex cmd_reg_mutex;
 	uint32_t cmd_reg_count;
+/*< LAFITE-9919 rentianzhi 20160503 begin */
+	struct mutex diagfwd_channel_mutex;
+/* LAFITE-9919 rentianzhi 20160503 end >*/
 	/* Sizes that reflect memory pool sizes */
 	unsigned int poolsize;
 	unsigned int poolsize_hdlc;

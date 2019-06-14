@@ -2524,7 +2524,9 @@ __acquires(udc->lock)
 
 	/*stop charging upon reset */
 	if (udc->transceiver)
-		usb_phy_set_power(udc->transceiver, 100);
+		/* < LAFITE-337 xiongzu'an 20160115 begin */
+		usb_phy_set_power(udc->transceiver, 500);
+		/* LAFITE-337 xiongzu'an 20160115 end > */
 
 	retval = _gadget_stop_activity(&udc->gadget);
 	if (retval)

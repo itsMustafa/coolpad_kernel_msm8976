@@ -9,6 +9,16 @@ fwabs := $(addprefix $(srctree)/,$(filter-out /%,$(fwdir)))$(filter /%,$(fwdir))
 
 fw-external-y := $(subst ",,$(CONFIG_EXTRA_FIRMWARE))
 
+#/* < LAFITE-385 modify by pangle at 20160106 begin */
+#/* < LAFITE-1704 modify by pangle at 201600215 begin */
+#/* < LAFITE-3993 modify by pangle at 201600304 begin */
+#/* < LAFITE-4673 modify by pangle at 201600311 begin */
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE) += synaptics/startup_boe_fw_update_05005706.img \
+							    synaptics/startup_truly_fw_update_03005708.img
+#/* LAFITE-4673 modify by pangle at 201600311 end > */
+#/* LAFITE-3993 modify by pangle at 201600304 end > */
+#/* LAFITE-1704 modify by pangle at 201600215 end > */
+#/* LAFITE-385 modify by pangle at 20160106 end > */
 # There are three cases to care about:
 # 1. Building kernel with CONFIG_FIRMWARE_IN_KERNEL=y -- $(fw-shipped-y) should
 #    include the firmware files to include, according to .config

@@ -36,6 +36,9 @@
 #include <linux/thermal.h>
 #include <linux/regulator/rpm-smd-regulator.h>
 #include <linux/regulator/consumer.h>
+#ifdef CONFIG_APP_PROFILE
+#include <linux/pm_qos.h>
+#endif
 #include <linux/regulator/driver.h>
 #include <linux/msm_thermal_ioctl.h>
 #include <soc/qcom/rpm-smd.h>
@@ -128,10 +131,19 @@ static struct delayed_work check_temp_work, retry_hotplug_work;
 static bool core_control_enabled;
 static uint32_t cpus_offlined;
 static cpumask_var_t cpus_previously_online;
+#ifdef CONFIG_APP_PROFILE
+static uint32_t max_min_cpus = (4<<8) + 1;
+#endif
 static DEFINE_MUTEX(core_control_mutex);
 static struct kobject *cc_kobj;
 static struct kobject *mx_kobj;
 static struct task_struct *hotplug_task;
+#ifdef CONFIG_APP_PROFILE
+static struct task_struct *appf_task;
+#endif
+#ifdef CONFIG_APP_PROFILE
+static struct completion appf_notify_complete;
+#endif
 static struct task_struct *freq_mitigation_task;
 static struct task_struct *thermal_monitor_task;
 static struct completion hotplug_notify_complete;
@@ -2902,6 +2914,18 @@ static __ref int do_hotplug(void *data)
 
 	return ret;
 }
+#ifdef CONFIG_APP_PROFILE
+static __ref int do_appf(void *data)
+{
+	int ret = 0;
+	while (!kthread_should_stop()) {
+		wait_for_completion(&appf_notify_complete);
+		INIT_COMPLETION(appf_notify_complete);
+		sysfs_notify(cc_kobj, NULL, "max_min_cpus");
+	}
+	return ret;
+}
+#endif
 #else
 static void __ref do_core_control(long temp)
 {
@@ -5065,15 +5089,31 @@ done_cc:
 	return count;
 }
 
+#ifdef CONFIG_APP_PROFILE
+static ssize_t show_max_min_cpus(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", max_min_cpus);
+}
+#endif
+
 static __refdata struct kobj_attribute cc_enabled_attr =
 __ATTR(enabled, 0644, show_cc_enabled, store_cc_enabled);
 
 static __refdata struct kobj_attribute cpus_offlined_attr =
 __ATTR(cpus_offlined, 0644, show_cpus_offlined, store_cpus_offlined);
 
+#ifdef CONFIG_APP_PROFILE
+static __refdata struct kobj_attribute max_min_cpus_attr =
+__ATTR(max_min_cpus, 0644, show_max_min_cpus, NULL);
+#endif
+
 static __refdata struct attribute *cc_attrs[] = {
 	&cc_enabled_attr.attr,
 	&cpus_offlined_attr.attr,
+#ifdef CONFIG_APP_PROFILE
+	&max_min_cpus_attr.attr,
+#endif
 	NULL,
 };
 
@@ -7410,6 +7450,42 @@ static int thermal_config_debugfs_read(struct seq_file *m, void *data)
 	return 0;
 }
 
+#ifdef CONFIG_APP_PROFILE
+static int max_min_cpus_notify(struct notifier_block *b,
+			   unsigned long l, void *v);
+
+static struct notifier_block min_onlie_cpus_notifier = {
+	.notifier_call = max_min_cpus_notify,
+};
+static struct notifier_block max_onlie_cpus_notifier = {
+	.notifier_call = max_min_cpus_notify,
+};
+
+static int max_min_cpus_notify(struct notifier_block *b,
+			   unsigned long l, void *v)
+{
+	uint32_t qmin, qmax;
+
+	qmin = (uint32_t)pm_qos_request(PM_QOS_MIN_ONLINE_CPUS);
+	qmax = (uint32_t)pm_qos_request(PM_QOS_MAX_ONLINE_CPUS);
+
+	if (qmax > 4)
+		qmax = 4;
+	if (qmin < 1)
+		qmin = 1;
+	if (qmin > qmax)
+		qmin = qmax;
+	pr_debug("cpucore qmin = %d, qmax = %d\n", qmin, qmax);
+	max_min_cpus = ((qmax << 8) & 0xff00) | (qmin & 0xff);
+	if (appf_task)
+		complete(&appf_notify_complete);
+	else
+		pr_err("%s: appf task is not initialized\n", KBUILD_MODNAME);
+
+	return NOTIFY_OK;
+}
+#endif
+
 static int msm_thermal_dev_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -7554,6 +7630,20 @@ static int msm_thermal_dev_probe(struct platform_device *pdev)
 		interrupt_mode_enable = false;
 	}
 
+#ifdef CONFIG_APP_PROFILE
+	init_completion(&appf_notify_complete);
+	appf_task = kthread_run(do_appf, NULL, "yl_appf:app_profile");
+	if (IS_ERR(appf_task))
+		pr_err("%s: Failed to create do_appf thread\n",
+				KBUILD_MODNAME);
+
+	ret = pm_qos_add_notifier(PM_QOS_MIN_ONLINE_CPUS,
+				 &min_onlie_cpus_notifier);
+	BUG_ON(ret);
+	ret = pm_qos_add_notifier(PM_QOS_MAX_ONLINE_CPUS,
+				 &max_onlie_cpus_notifier);
+	BUG_ON(ret);
+#endif
 	return ret;
 fail:
 	if (ret)

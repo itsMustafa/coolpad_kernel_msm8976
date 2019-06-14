@@ -56,6 +56,8 @@
 #define CREATE_TRACE_POINTS
 #include "mdss_debug.h"
 
+#include <linux/yl_lcd.h>
+
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
 #else
@@ -791,6 +793,8 @@ static DEVICE_ATTR(msm_fb_panel_status, S_IRUGO | S_IWUSR,
 	mdss_fb_get_panel_status, mdss_fb_force_panel_dead);
 static DEVICE_ATTR(msm_fb_dfps_mode, S_IRUGO | S_IWUSR,
 	mdss_fb_get_dfps_mode, mdss_fb_change_dfps_mode);
+static DEVICE_ATTR(lcd_type, S_IRUGO, lcd_read_type, NULL);
+
 static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_type.attr,
 	&dev_attr_msm_fb_split.attr,
@@ -802,6 +806,7 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_thermal_level.attr,
 	&dev_attr_msm_fb_panel_status.attr,
 	&dev_attr_msm_fb_dfps_mode.attr,
+	&dev_attr_lcd_type.attr,
 	NULL,
 };
 
@@ -3889,6 +3894,24 @@ struct fb_info *msm_fb_get_writeback_fb(void)
 }
 EXPORT_SYMBOL(msm_fb_get_writeback_fb);
 
+#ifdef CONFIG_YL_ADC_BATTERY
+unsigned int  mdss_get_bl_lvl(void)
+{
+	unsigned int c = 0;
+	struct msm_fb_data_type *mfd;
+	for (c = 0; c < fbi_list_index; ++c) {
+		mfd = (struct msm_fb_data_type *)fbi_list[c]->par;
+		if (mfd->panel.type == MIPI_VIDEO_PANEL)
+			break;
+	}
+	mutex_lock(&mfd->bl_lock);
+	c = mfd->bl_level;
+	mutex_unlock(&mfd->bl_lock);
+	return c;
+}
+EXPORT_SYMBOL(mdss_get_bl_lvl);
+#endif
+
 static int mdss_fb_register_extra_panel(struct platform_device *pdev,
 	struct mdss_panel_data *pdata)
 {
@@ -4072,3 +4095,5 @@ void mdss_fb_report_panel_dead(struct msm_fb_data_type *mfd)
 	pr_err("Panel has gone bad, sending uevent - %s\n", envp[0]);
 	return;
 }
+
+__setup("lcd_id=", get_lcd_type);

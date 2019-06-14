@@ -182,6 +182,49 @@ static DEFINE_PER_CPU(struct cpufreq_frequency_table *, cpufreq_show_table);
 /**
  * show_available_freqs - show available frequencies for the specified CPU
  */
+#ifdef CONFIG_APP_PROFILE
+unsigned int get_nearest_cpufreq(struct cpufreq_policy *policy,
+				unsigned int set_freq)
+{
+	unsigned int i = 0;
+	unsigned int index = ~0;
+	unsigned int j = 0;
+	unsigned int cpu = policy->cpu;
+	struct cpufreq_frequency_table *table;
+
+	if (!per_cpu(cpufreq_show_table, cpu))
+		return -ENODEV;
+
+	table = per_cpu(cpufreq_show_table, cpu);
+
+	for (i = 0; (table[i].frequency != CPUFREQ_TABLE_END); i++) {
+		unsigned int freq = table[i].frequency;
+		if (freq == CPUFREQ_ENTRY_INVALID)
+			continue;
+		if (freq >= set_freq) {
+			index = i;
+			break;
+		}
+		j = i;
+	}
+
+	if (index == ~0) {
+		return table[j].frequency;
+	}
+	if (index == 0) {
+		return table[0].frequency;
+	} else {
+		if (set_freq >= ((table[index].frequency +
+			table[index-1].frequency)/2)) {
+			return table[index].frequency;
+		} else {
+			return table[index - 1].frequency;
+		}
+	}
+
+
+}
+#endif
 static ssize_t show_available_freqs(struct cpufreq_policy *policy, char *buf)
 {
 	unsigned int i = 0;

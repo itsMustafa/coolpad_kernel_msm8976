@@ -19,9 +19,16 @@
 #include <linux/irqreturn.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/gpio.h>
-
+/* < LAFITE-2777 by pangle at 20160303 begin */
+#include "../../../input/touchscreen/synaptics_dsx_oem/synaptics_dsx_core.h"
+/* LAFITE-2777 by pangle at 20160303 end > */
 #include "mdss_panel.h"
 #include "mdss_dsi_cmd.h"
+/* < LAFITE-4190 xingbin 20160307 begin */
+#define LCD_PANEL_SUPPLY_PRIMARY   1
+#define LCD_PANEL_SUPPLY_SECOND     2
+#define LCD_PANEL_SUPPLY_THIRD	  3
+/* LAFITE-4190 xingbin 20160307 end >*/
 
 #define MMSS_SERDES_BASE_PHY 0x04f01000 /* mmss (De)Serializer CFG */
 
@@ -392,6 +399,9 @@ struct mdss_dsi_ctrl_pdata {
 	int panel_mode;
 	int irq_cnt;
 	int disp_te_gpio;
+	#ifdef CONFIG_YL_LCD_VDDI_ENABLE_GPIO
+	int disp_vddi_enable_gpio;
+	#endif
 	int rst_gpio;
 	int disp_en_gpio;
 	int bklt_en_gpio;
@@ -544,6 +554,11 @@ int mdss_dsi_shadow_clk_init(struct platform_device *pdev,
 void mdss_dsi_shadow_clk_deinit(struct device *dev,
 			struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable);
+
+#ifdef CONFIG_YL_LCD_VDDI_ENABLE_GPIO
+int mdss_dsi_panel_vddi_enable(struct mdss_panel_data *pdata, int enable);
+#endif
+
 void mdss_dsi_phy_disable(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_cmd_test_pattern(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_video_test_pattern(struct mdss_dsi_ctrl_pdata *ctrl);
@@ -783,5 +798,15 @@ static inline bool mdss_dsi_cmp_panel_reg(struct dsi_buf status_buf,
 {
 	return status_buf.data[i] == status_val[i];
 }
-
+/* < LAFITE-2777 by pangle at 20160303 begin */
+extern void synaptics_rmi4_wakeup_gesture(struct synaptics_rmi4_data *rmi4_data, bool enable);
+extern void synaptics_rmi4_sleep_enable(struct synaptics_rmi4_data *rmi4_data,bool enable);
+extern struct synaptics_rmi4_data *rmi4_data_truly;
+/*< LAFITE-4095 by pangle at 20160305 begin */
+extern bool is_tp_insert;
+/* LAFITE-4095 by pangle at 20160305 end > */
+/* LAFITE-2777 by pangle at 20160303 end > */
+/* < LAFITE-4179 by pangle at 20160309 begin */
+extern bool tp_sleep_mode;
+/* LAFITE-4179 by pangle at 20160309 end > */
 #endif /* MDSS_DSI_H */

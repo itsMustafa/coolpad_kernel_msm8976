@@ -573,7 +573,9 @@
 						"torch0_trigger";
 				qcom,max-current = <200>;
 				qcom,id = <0>;
-				qcom,current = <120>;
+				/*Added by yangyongfeng for torch flash current,LAFITE-5057 (QL1530) 20160316,begin*/
+				qcom,current = <70>;
+				/*Added by yangyongfeng for torch flash current,LAFITE-5057 (QL1530) 20160316,end*/
 			};
 
 			pmi8950_torch1: qcom,torch_1 {
@@ -583,7 +585,9 @@
 						"torch1_trigger";
 				qcom,max-current = <200>;
 				qcom,id = <1>;
-				qcom,current = <120>;
+				/*Added by yangyongfeng for torch flash current,LAFITE-5057 (QL1530) 20160316,begin*/
+				qcom,current = <70>;
+				/*Added by yangyongfeng for torch flash current,LAFITE-5057 (QL1530) 20160316,end*/
 			};
 
 			pmi8950_switch: qcom,switch {

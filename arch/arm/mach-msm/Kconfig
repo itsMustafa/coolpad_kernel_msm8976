@@ -1104,4 +1104,10 @@ config FSM9900_GSM_NL
 	  The serial port connection can be established to communicate with the
 	  GSM NL module.
 
+config APP_PROFILE
+	bool "Enable app profile feature"
+	depends on ARCH_MSM
+	help
+	  Enable app profile to control cpu adn gpu freq
+
 endif

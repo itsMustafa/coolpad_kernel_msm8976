@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -364,7 +364,6 @@ static int cmdq_enable(struct mmc_host *mmc)
 
 	cq_host->enabled = true;
 	mmc_host_clr_cq_disable(mmc);
-
 	if (cq_host->ops->set_transfer_params)
 		cq_host->ops->set_transfer_params(mmc);
 

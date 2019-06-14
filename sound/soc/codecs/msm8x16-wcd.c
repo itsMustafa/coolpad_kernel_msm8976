@@ -44,7 +44,11 @@
 #include "wcd-mbhc-v2.h"
 #include "msm8916-wcd-irq.h"
 #include "msm8x16_wcd_registers.h"
-
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-5621 lichuangchuang 20160324 begin */
+#include <linux/wakelock.h>
+/* LAFITE-5621 lichuangchuang 20160324 end >*/
+#endif //chenshuyun add
 #define MSM8X16_WCD_RATES (SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |\
 			SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_48000)
 #define MSM8X16_WCD_FORMATS (SNDRV_PCM_FMTBIT_S16_LE |\
@@ -262,7 +266,12 @@ struct msm8x16_wcd_spmi {
 	struct spmi_device *spmi;
 	int base;
 };
-
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-5621 lichuangchuang 20160324 begin */
+static struct wake_lock		super_voice_wake_lock;
+static bool			super_voice_lock;
+/* LAFITE-5621 lichuangchuang 20160324 end >*/
+#endif //chenshuyun add
 /* Multiply gain_adj and offset by 1000 and 100 to avoid float arithmetic */
 static const struct wcd_imped_i_ref imped_i_ref[] = {
 	{I_h4_UA, 8, 800, 9000, 10000},
@@ -1311,6 +1320,7 @@ static void msm8x16_wcd_boost_on(struct snd_soc_codec *codec)
 	struct msm8x16_wcd_spmi *wcd = &msm8x16_wcd_modules[0];
 	struct msm8x16_wcd_priv *msm8x16_wcd = snd_soc_codec_get_drvdata(codec);
 
+	/* FERRARI-4614 Qcom advice to comment out this part to enable boost
 	ret = spmi_ext_register_readl(wcd->spmi->ctrl, PMIC_SLAVE_ID_1,
 					PMIC_LDO7_EN_CTL, &dest, 1);
 	if (ret != 0) {
@@ -1323,6 +1333,7 @@ static void msm8x16_wcd_boost_on(struct snd_soc_codec *codec)
 		pr_err("LDO7 not enabled return!\n");
 		return;
 	}
+	*/
 	ret = spmi_ext_register_readl(wcd->spmi->ctrl, PMIC_SLAVE_ID_0,
 						PMIC_MBG_OK, &dest, 1);
 	if (ret != 0) {
@@ -2100,7 +2111,109 @@ static int msm8x16_wcd_boost_option_set(struct snd_kcontrol *kcontrol,
 		__func__, msm8x16_wcd->boost_option);
 	return 0;
 }
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-609 lichuangchuang 20160116 begin */
+static int msm8x16_wcd_Smart_PA_I2S_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct msm8x16_wcd_priv *msm8x16_wcd = snd_soc_codec_get_drvdata(codec);
 
+	if (msm8x16_wcd->Smart_PA_I2S_set == false) {
+		ucontrol->value.integer.value[0] = 0;
+	} else if (msm8x16_wcd->Smart_PA_I2S_set == true) {
+		ucontrol->value.integer.value[0] = 1;
+	} else  {
+		dev_err(codec->dev, "%s: ERROR: Unsupported Speaker Boost = %d\n",
+			__func__, msm8x16_wcd->Smart_PA_I2S_set);
+		return -EINVAL;
+	}
+
+	dev_dbg(codec->dev, "%s: msm8x16_wcd->Smart_PA_I2S_set = %d\n", __func__,
+			msm8x16_wcd->Smart_PA_I2S_set);
+	return 0;
+}
+
+static int msm8x16_wcd_Smart_PA_I2S_set(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct msm8x16_wcd_priv *msm8x16_wcd = snd_soc_codec_get_drvdata(codec);
+
+	dev_dbg(codec->dev, "%s: ucontrol->value.integer.value[0] = %ld\n",
+		__func__, ucontrol->value.integer.value[0]);
+
+	switch (ucontrol->value.integer.value[0]) {
+	case 0:
+		/*< LAFITE-649 lichuangchuang 20160118 begin */
+		msm_q6_enable_mi2s(codec, false);
+		/* LAFITE-649 lichuangchuang 20160118 end >*/
+		msm8x16_wcd->Smart_PA_I2S_set = false;
+		break;
+	case 1:
+		msm_q6_enable_mi2s(codec, true);
+		msm8x16_wcd->Smart_PA_I2S_set = true;
+		break;
+	default:
+		return -EINVAL;
+	}
+	dev_dbg(codec->dev, "%s: msm8x16_wcd->Smart_PA_I2S_set = %d\n",
+		__func__, msm8x16_wcd->Smart_PA_I2S_set);
+	return 0;
+}
+/* LAFITE-609 lichuangchuang 20160116 end >*/
+
+/*< LAFITE-5621 lichuangchuang 20160324 begin */
+static int msm8x16_wcd_super_voice_wake_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+
+	if (super_voice_lock == false) {
+		ucontrol->value.integer.value[0] = 0;
+	} else if (super_voice_lock == true) {
+		ucontrol->value.integer.value[0] = 1;
+	} else  {
+		dev_err(codec->dev, "%s: ERROR: Unsupported Super voice lock = %d\n",
+			__func__, super_voice_lock);
+		return -EINVAL;
+	}
+
+	pr_debug("%s: super_voice_lock = %d\n", __func__, super_voice_lock);
+	return 0;
+}
+
+static int msm8x16_wcd_super_voice_wake_set(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+
+	dev_dbg(codec->dev, "%s: ucontrol->value.integer.value[0] = %ld\n",
+		__func__, ucontrol->value.integer.value[0]);
+
+	switch (ucontrol->value.integer.value[0]) {
+	case 0:
+		if(super_voice_lock) {
+			super_voice_lock = false;
+			wake_unlock(&super_voice_wake_lock);
+		}
+		break;
+	case 1:
+		if(!super_voice_lock) {
+			super_voice_lock = true;
+			wake_lock(&super_voice_wake_lock);
+		}
+		break;
+	default:
+		dev_err(codec->dev, "%s: ERROR: Unsupported Super voice lock = %d\n",
+			__func__, super_voice_lock);
+		return -EINVAL;
+	}
+	pr_debug("%s: super_voice_lock = %d\n", __func__, super_voice_lock);
+	return 0;
+}
+/* LAFITE-5621 lichuangchuang 20160324 end >*/
+#endif //chenshuyun add
 static int msm8x16_wcd_spk_boost_get(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
@@ -2411,7 +2524,22 @@ static const char * const msm8x16_wcd_spk_boost_ctrl_text[] = {
 static const struct soc_enum msm8x16_wcd_spk_boost_ctl_enum[] = {
 		SOC_ENUM_SINGLE_EXT(2, msm8x16_wcd_spk_boost_ctrl_text),
 };
-
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-609 lichuangchuang 20160116 begin */
+static const char * const msm8x16_wcd_Smart_PA_I2S_ctrl_text[] = {
+		"DISABLE", "ENABLE"};
+static const struct soc_enum msm8x16_wcd_Smart_PA_I2S_ctl_enum[] = {
+		SOC_ENUM_SINGLE_EXT(2, msm8x16_wcd_Smart_PA_I2S_ctrl_text),
+};
+/* LAFITE-609 lichuangchuang 20160116 end >*/
+/*< LAFITE-5621 lichuangchuang 20160324 begin */
+static const char * const msm8x16_wcd_super_voice_wake_ctrl_text[] = {
+		"UNLOCK", "LOCK"};
+static const struct soc_enum msm8x16_wcd_super_voice_wake_ctl_enum[] = {
+		SOC_ENUM_SINGLE_EXT(2, msm8x16_wcd_super_voice_wake_ctrl_text),
+};
+/* LAFITE-5621 lichuangchuang 20160324 end >*/
+#endif //chenshuyun add
 static const char * const msm8x16_wcd_ext_spk_boost_ctrl_text[] = {
 		"DISABLE", "ENABLE"};
 static const struct soc_enum msm8x16_wcd_ext_spk_boost_ctl_enum[] = {
@@ -2451,7 +2579,17 @@ static const struct snd_kcontrol_new msm8x16_wcd_snd_controls[] = {
 
 	SOC_ENUM_EXT("Speaker Boost", msm8x16_wcd_spk_boost_ctl_enum[0],
 		msm8x16_wcd_spk_boost_get, msm8x16_wcd_spk_boost_set),
+#ifdef S2_AUDIO_FEATURE
+	/*< LAFITE-609 lichuangchuang 20160116 begin */
+	SOC_ENUM_EXT("Smart PA I2S", msm8x16_wcd_Smart_PA_I2S_ctl_enum[0],
+		msm8x16_wcd_Smart_PA_I2S_get, msm8x16_wcd_Smart_PA_I2S_set),
+	/* LAFITE-609 lichuangchuang 20160116 end >*/
 
+	/*< LAFITE-5621 lichuangchuang 20160324 begin */
+	SOC_ENUM_EXT("SuperVoiceWakeLock", msm8x16_wcd_super_voice_wake_ctl_enum[0],
+		msm8x16_wcd_super_voice_wake_get, msm8x16_wcd_super_voice_wake_set),
+	/* LAFITE-5621 lichuangchuang 20160324 end >*/
+#endif //chenshuyun add
 	SOC_ENUM_EXT("Ext Spk Boost", msm8x16_wcd_ext_spk_boost_ctl_enum[0],
 		msm8x16_wcd_ext_spk_boost_get, msm8x16_wcd_ext_spk_boost_set),
 
@@ -3413,7 +3551,7 @@ static int msm8x16_wcd_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 					0x02, 0x02);
 			snd_soc_update_bits(codec, micb_int_reg, 0x80, 0x80);
 		} else if (strnstr(w->name, internal2_text, strlen(w->name))) {
-			snd_soc_update_bits(codec, micb_int_reg, 0x10, 0x10);
+			snd_soc_update_bits(codec, micb_int_reg, 0x10, 0x00);
 			snd_soc_update_bits(codec, w->reg, 0x60, 0x00);
 		} else if (strnstr(w->name, internal3_text, strlen(w->name))) {
 			snd_soc_update_bits(codec, micb_int_reg, 0x2, 0x2);
@@ -3421,6 +3559,12 @@ static int msm8x16_wcd_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 		if (!strnstr(w->name, external_text, strlen(w->name)))
 			snd_soc_update_bits(codec,
 				MSM8X16_WCD_A_ANALOG_MICB_1_EN, 0x05, 0x04);
+                /*add by qixuliang 20160407 for adjust micbias2 voltage to 2.8V start*/
+                if(strnstr(w->name,internal2_text, strlen(w->name)))
+                     snd_soc_update_bits(codec,MSM8X16_WCD_A_ANALOG_MICB_1_VAL,0xF8,0xC0);
+                else
+                     snd_soc_update_bits(codec,MSM8X16_WCD_A_ANALOG_MICB_1_VAL,0xF8,0x20);
+                /*add by qixuliang 20160407 end*/
 		if (w->reg == MSM8X16_WCD_A_ANALOG_MICB_1_EN)
 			msm8x16_wcd_configure_cap(codec, true, micbias2);
 
@@ -3446,6 +3590,9 @@ static int msm8x16_wcd_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 		} else if (strnstr(w->name, internal2_text, strlen(w->name))) {
 			msm8x16_notifier_call(codec,
 					WCD_EVENT_POST_MICBIAS_2_OFF);
+                        /*add by qixuliang 20160407 for adjust micbias2 voltage to 2.6V start*/
+                        snd_soc_update_bits(codec,MSM8X16_WCD_A_ANALOG_MICB_1_VAL,0xF8,0x20);
+                        /*add by qixuliang 20160407 end*/
 		} else if (strnstr(w->name, internal3_text, 30)) {
 			snd_soc_update_bits(codec, micb_int_reg, 0x2, 0x0);
 		} else if (strnstr(w->name, external2_text, strlen(w->name))) {
@@ -3883,7 +4030,7 @@ void wcd_imped_config(struct snd_soc_codec *codec,
 			break;
 		case CAJON:
 		case CAJON_2_0:
-			if (value >= 13) {
+			if (value >= 46) {
 				snd_soc_update_bits(codec,
 					MSM8X16_WCD_A_ANALOG_RX_EAR_CTL,
 					0x20, 0x20);
@@ -5466,10 +5613,19 @@ static int msm8x16_wcd_codec_probe(struct snd_soc_codec *codec)
 		kfree(msm8x16_wcd_priv);
 		return ret;
 	}
-
+#ifdef S2_AUDIO_FEATURE
+	/* < LAFITE-4892 chaofubang 201600315 begin */
 	wcd_mbhc_init(&msm8x16_wcd_priv->mbhc, codec, &mbhc_cb, &intr_ids,
+		      wcd_mbhc_registers, false);
+	/* LAFITE-4892 chaofubang 201600315 end >*/
+	/*< LAFITE-5621 lichuangchuang 20160324 begin */
+	wake_lock_init(&super_voice_wake_lock, WAKE_LOCK_SUSPEND, "super_voice_lock");
+	super_voice_lock = false;
+	/* LAFITE-5621 lichuangchuang 20160324 end >*/
+#else
+    	wcd_mbhc_init(&msm8x16_wcd_priv->mbhc, codec, &mbhc_cb, &intr_ids,
 		      wcd_mbhc_registers, true);
-
+#endif //chenshuyun add
 	msm8x16_wcd_priv->mclk_enabled = false;
 	msm8x16_wcd_priv->clock_active = false;
 	msm8x16_wcd_priv->config_mode_active = false;

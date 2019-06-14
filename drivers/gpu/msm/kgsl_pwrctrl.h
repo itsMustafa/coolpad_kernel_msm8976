@@ -136,6 +136,10 @@ struct kgsl_pwrctrl {
 	unsigned int active_pwrlevel;
 	unsigned int previous_pwrlevel;
 	unsigned int thermal_pwrlevel;
+#ifdef CONFIG_APP_PROFILE
+	int appf_max_pwrlevel;
+	int appf_min_pwrlevel;
+#endif
 	unsigned int default_pwrlevel;
 	unsigned int init_pwrlevel;
 	unsigned int wakeup_maxpwrlevel;
@@ -187,6 +191,12 @@ void kgsl_pwrctrl_buslevel_update(struct kgsl_device *device,
 int kgsl_pwrctrl_init_sysfs(struct kgsl_device *device);
 void kgsl_pwrctrl_uninit_sysfs(struct kgsl_device *device);
 int kgsl_pwrctrl_change_state(struct kgsl_device *device, int state);
+#ifdef CONFIG_APP_PROFILE
+int kgsl_pwrctrl_appf_max_gpuclk_set(struct kgsl_device *device,
+		int level);
+int kgsl_pwrctrl_appf_min_gpuclk_set(struct kgsl_device *device,
+		int level);
+#endif
 
 static inline unsigned long kgsl_get_clkrate(struct clk *clk)
 {

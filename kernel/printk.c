@@ -50,7 +50,9 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/printk.h>
-
+/*< LAFITE-3550 liumaoxin 20160302 start>*/
+#include <linux/rtc.h>
+/*< LAFITE-3550 liumaoxin 20160302 end>*/
 #ifdef CONFIG_EARLY_PRINTK_DIRECT
 extern void printascii(char *);
 #endif
@@ -1036,6 +1038,32 @@ static size_t print_time(u64 ts, char *buf)
 	return sprintf(buf, "[%5lu.%06lu] ",
 		       (unsigned long)ts, rem_nsec / 1000);
 }
+/*< LAFITE-3550 liumaoxin 20160302 start>*/
+static size_t print_time_utc(u64 ts, char *buf)
+{
+	unsigned long rem_nsec;
+	/* add the rtc time stamp */
+	struct timespec ts_rtc;
+	struct rtc_time tm;
+	int id;
+	if (!printk_time)
+		return 0;
+
+	rem_nsec = do_div(ts, 1000000000);
+
+	if (!buf)
+		return snprintf(NULL, 0, "0[%5lu.000000][0000-00-00 00:00:00.000000000]",
+			(unsigned long)ts);
+
+	id = raw_smp_processor_id();
+	getnstimeofday_nolock(&ts_rtc);
+	rtc_time_to_tm(ts_rtc.tv_sec, &tm);
+	return sprintf(buf, "%d[%5lu.%06lu][%d-%02d-%02d %02d:%02d:%02d.%09lu]",
+		id, (unsigned long)ts, rem_nsec / 1000,
+		tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+		tm.tm_hour % 24, tm.tm_min, tm.tm_sec, ts_rtc.tv_nsec);
+
+}
 
 static size_t print_prefix(const struct log *msg, bool syslog, char *buf)
 {
@@ -1054,12 +1082,13 @@ static size_t print_prefix(const struct log *msg, bool syslog, char *buf)
 			else if (prefix > 9)
 				len++;
 		}
+		len += print_time_utc(msg->ts_nsec, buf ? buf + len : NULL);
+	}else{
+		len += print_time(msg->ts_nsec, buf ? buf + len : NULL);
 	}
-
-	len += print_time(msg->ts_nsec, buf ? buf + len : NULL);
 	return len;
 }
-
+/*< LAFITE-3550 liumaoxin 20160302 end>*/
 static size_t msg_print_text(const struct log *msg, enum log_flags prev,
 			     bool syslog, char *buf, size_t size)
 {

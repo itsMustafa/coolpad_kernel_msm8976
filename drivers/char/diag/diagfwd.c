@@ -13,6 +13,11 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/device.h>
+#ifdef CONFIG_QXDM_CMD
+#include <linux/miscdevice.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#endif
 #include <linux/err.h>
 #include <linux/sched.h>
 #include <linux/ratelimit.h>
@@ -732,6 +737,97 @@ int diag_check_common_cmd(struct diag_pkt_header_t *header)
 	return 0;
 }
 
+/* add mdiag_device for slate test of sprint */
+#ifdef CONFIG_QXDM_CMD
+static int mdiag_open(struct inode *inode, struct file *file)
+{
+	file->private_data = NULL;
+	/*printk("mdiag: mdiag_open\n");*/
+	return 0;
+}
+
+static int mdiag_release(struct inode *inode, struct file *file)
+{
+	file->private_data = NULL;
+	return 0;
+}
+
+static ssize_t mdiag_write(struct file *fp, const char __user *user_buf,
+						size_t count, loff_t *pos)
+{
+	/*
+	int i=0;
+
+	printk("mdiag: user_buf==");
+	for(i=0;i<count;i++)
+		printk("%02x",*(user_buf+i));
+	printk("  count==%d\n",count);
+	*/
+	if (count >= 2000) {
+		pr_err("mdiag: write buf too long count=%d\n", count);
+		return 0;
+	}
+	if (copy_from_user(driver->apps_rsp_buf, user_buf, count))
+		return -EFAULT;
+
+	encode_rsp_and_send(count-1);
+	return count;
+}
+
+/* file operations for mdiag device /dev/mdiag */
+static const struct file_operations mdiag_fops = {
+	.owner = THIS_MODULE,
+	.open = mdiag_open,
+	.release = mdiag_release,
+	.write = mdiag_write,
+};
+
+static struct miscdevice mdiag_device = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = "mdiag",
+	.fops = &mdiag_fops,
+};
+
+static void unsignedtohex(u32 x, char *hex)
+{
+	unsigned temp = 0;
+	unsigned val = x;
+	unsigned i;
+
+	for (i = 0; i < 2; i++) {
+		temp = val & 0xF0;
+		temp = temp >> 4;
+
+		switch (temp) {
+		case 0:
+		case 1:
+		case 2:
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+		case 7:
+		case 8:
+		case 9:
+			*hex = ((char)temp + '0');
+			break;
+		case 0x0a:
+		case 0x0b:
+		case 0x0c:
+		case 0x0d:
+		case 0x0e:
+		case 0x0f:
+			*hex = (temp + 'a' - 10);
+			break;
+		default:
+			break;
+		}
+		hex++;
+		val = val << 4;
+	}
+}
+#endif
+
 static int diag_cmd_chk_stats(unsigned char *src_buf, int src_len,
 			      unsigned char *dest_buf, int dest_len)
 {
@@ -952,6 +1048,31 @@ int diag_process_apps_pkt(unsigned char *buf, int len)
 			return 0;
 		}
 	}
+#ifdef CONFIG_QXDM_CMD
+	else if ((*buf == 0xF6) || (*buf == 0x60) || (*buf == 0x20)
+		|| (*buf == 0xFD) || ((*buf == 0x29) && (*(buf+1) == 0x02))) {
+		char *QXDM_EVENT[2] = {NULL, NULL};
+		char **uevent_envp = NULL;
+		char hex[81] = "                    ";
+		char event[90];
+		if (len > 40) {
+			pr_err("mdiag: qxdm cmd too long len=%d", len);
+			return 0;
+		}
+		for (i = 0; i < len; i++)
+			unsignedtohex(*(buf+i), hex+i*2);
+
+		snprintf(event, 90, "QXDM_CMD=%s", hex);
+		QXDM_EVENT[0] = event;
+		uevent_envp = QXDM_EVENT;
+
+		kobject_uevent_env(&mdiag_device.this_device->kobj,
+				KOBJ_CHANGE	, uevent_envp);
+
+		/*printk("mdiag:QXDM_CMD==%s   CMD_LEN==%d\n",hex,len);*/
+		return 0;
+	}
+#endif
 	/* Return the Delayed Response Wrap Status */
 	else if ((*buf == 0x4b) && (*(buf+1) == 0x32) &&
 		(*(buf+2) == 0x04) && (*(buf+3) == 0x0)) {
@@ -1558,6 +1679,14 @@ int diagfwd_init(void)
 		goto err;
 	}
 
+#ifdef CONFIG_QXDM_CMD
+	ret = misc_register(&mdiag_device);
+	if (ret) {
+		pr_err("diag: register mdiag_deivice error! ret=%d\n", ret);
+		goto err;
+	}
+#endif
+
 	return 0;
 err:
 	pr_err("diag: In %s, couldn't initialize diag\n", __func__);
@@ -1589,4 +1718,8 @@ void diagfwd_exit(void)
 	kfree(driver->apps_rsp_buf);
 	kfree(driver->user_space_data_buf);
 	destroy_workqueue(driver->diag_wq);
+
+#ifdef CONFIG_QXDM_CMD
+	misc_deregister(&mdiag_device);
+#endif
 }

@@ -26,6 +26,9 @@
 #include "kgsl_pwrscale.h"
 #include "kgsl_device.h"
 #include "kgsl_trace.h"
+#ifdef CONFIG_APP_PROFILE
+#include <linux/pm_qos.h>
+#endif
 #include <soc/qcom/devfreq_devbw.h>
 
 #define KGSL_PWRFLAGS_POWER_ON 0
@@ -518,6 +521,9 @@ static ssize_t kgsl_pwrctrl_thermal_pwrlevel_store(struct device *dev,
 {
 	struct kgsl_device *device = kgsl_device_from_dev(dev);
 	struct kgsl_pwrctrl *pwr;
+#ifdef CONFIG_APP_PROFILE
+	int  max_level;
+#endif
 	int ret;
 	unsigned int level = 0;
 
@@ -533,17 +539,209 @@ static ssize_t kgsl_pwrctrl_thermal_pwrlevel_store(struct device *dev,
 
 	mutex_lock(&device->mutex);
 
+#ifdef CONFIG_APP_PROFILE
+	if (level > pwr->min_pwrlevel)
+		level = pwr->min_pwrlevel;
+#else
 	if (level > pwr->num_pwrlevels - 2)
 		level = pwr->num_pwrlevels - 2;
+#endif
 
 	pwr->thermal_pwrlevel = level;
 
+#ifdef CONFIG_APP_PROFILE
+	max_level = max_t(int, pwr->appf_max_pwrlevel, pwr->thermal_pwrlevel);
+	pwr->max_pwrlevel = max_level;
+#endif
 	/* Update the current level using the new limit */
 	kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
 	mutex_unlock(&device->mutex);
 
 	return count;
 }
+
+#ifdef CONFIG_APP_PROFILE
+int kgsl_pwrctrl_appf_max_gpuclk_set(struct kgsl_device *device,
+		int level)
+{
+	struct kgsl_pwrctrl *pwr;
+	unsigned int max_level;
+
+	if (device == NULL)
+		return -EINVAL;
+
+	pwr = &device->pwrctrl;
+
+	if (level < 0)
+		return -EINVAL;
+
+	mutex_lock(&device->mutex);
+
+	/* You can't set a maximum power level lower than the minimum */
+	if (level > pwr->min_pwrlevel)
+		level = pwr->min_pwrlevel;
+
+	pwr->appf_max_pwrlevel = level;
+
+	max_level = max_t(unsigned int, pwr->thermal_pwrlevel,
+			pwr->appf_max_pwrlevel);
+	pwr->max_pwrlevel = max_level;
+
+	/*
+	 * If there is no policy then move to max by default.  Otherwise only
+	 * move max if the current level happens to be higher then the new max
+	 */
+	if (max_level > pwr->active_pwrlevel)
+		kgsl_pwrctrl_pwrlevel_change(device, max_level);
+	mutex_unlock(&device->mutex);
+
+	return 0;
+}
+
+int kgsl_pwrctrl_appf_min_gpuclk_set(struct kgsl_device *device,
+		int level)
+{
+	struct kgsl_pwrctrl *pwr;
+	unsigned int min_level;
+
+	if (device == NULL)
+		return -EINVAL;
+
+	pwr = &device->pwrctrl;
+
+	mutex_lock(&device->mutex);
+	if (level > pwr->num_pwrlevels - 2)
+		level = pwr->num_pwrlevels - 2;
+
+	/* You can't set a minimum power level lower than the maximum */
+	if (level < pwr->max_pwrlevel)
+		level = pwr->max_pwrlevel;
+
+	pwr->appf_min_pwrlevel = level;
+
+	min_level = max_t(unsigned int, pwr->thermal_pwrlevel,
+			pwr->appf_min_pwrlevel);
+	pwr->min_pwrlevel = min_level;
+
+	/* Only move the power level higher if minimum is higher then the
+	 * current level
+	 */
+
+	if (min_level < pwr->active_pwrlevel)
+		kgsl_pwrctrl_pwrlevel_change(device, min_level);
+
+	mutex_unlock(&device->mutex);
+
+	return 0;
+}
+
+static ssize_t kgsl_pwrctrl_appf_max_pwrlevel_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct kgsl_device *device = kgsl_device_from_dev(dev);
+	struct kgsl_pwrctrl *pwr;
+	int ret;
+	unsigned int max_level, level = 0;
+
+	if (device == NULL)
+		return 0;
+
+	pwr = &device->pwrctrl;
+
+	ret = kgsl_sysfs_store(buf, &level);
+	if (ret)
+		return ret;
+
+	mutex_lock(&device->mutex);
+
+	/* You can't set a maximum power level lower than the minimum */
+	if (level > pwr->min_pwrlevel)
+		level = pwr->min_pwrlevel;
+
+	pwr->appf_max_pwrlevel = level;
+
+
+	max_level = max_t(unsigned int, pwr->thermal_pwrlevel,
+			pwr->appf_max_pwrlevel);
+	pwr->max_pwrlevel = max_level;
+	/*
+	 * If there is no policy then move to max by default.  Otherwise only
+	 * move max if the current level happens to be higher then the new max
+	 */
+	if (max_level > pwr->active_pwrlevel)
+		kgsl_pwrctrl_pwrlevel_change(device, max_level);
+	mutex_unlock(&device->mutex);
+	return count;
+}
+
+static ssize_t kgsl_pwrctrl_appf_min_pwrlevel_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{       struct kgsl_device *device = kgsl_device_from_dev(dev);
+	struct kgsl_pwrctrl *pwr;
+	int ret;
+	unsigned int min_level, level = 0;
+
+	if (device == NULL)
+		return 0;
+
+	pwr = &device->pwrctrl;
+
+	ret = kgsl_sysfs_store(buf, &level);
+	if (ret)
+		return ret;
+
+	mutex_lock(&device->mutex);
+	if (level > pwr->num_pwrlevels - 2)
+		level = pwr->num_pwrlevels - 2;
+
+	/* You can't set a minimum power level lower than the maximum */
+	if (level < pwr->max_pwrlevel)
+		level = pwr->max_pwrlevel;
+
+	pwr->appf_min_pwrlevel = level;
+
+	min_level = max_t(unsigned int, pwr->thermal_pwrlevel,
+			pwr->appf_min_pwrlevel);
+	pwr->min_pwrlevel = min_level;
+	/* Only move the power level higher if minimum is higher then the
+	 * current level
+	 */
+
+	if (min_level < pwr->active_pwrlevel)
+		kgsl_pwrctrl_pwrlevel_change(device, min_level);
+
+	mutex_unlock(&device->mutex);
+	return count;
+}
+
+static ssize_t kgsl_pwrctrl_appf_max_pwrlevel_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+
+	struct kgsl_device *device = kgsl_device_from_dev(dev);
+	struct kgsl_pwrctrl *pwr;
+	if (device == NULL)
+		return 0;
+	pwr = &device->pwrctrl;
+	return snprintf(buf, PAGE_SIZE, "%u\n", pwr->appf_max_pwrlevel);
+}
+
+static ssize_t kgsl_pwrctrl_appf_min_pwrlevel_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	struct kgsl_device *device = kgsl_device_from_dev(dev);
+	struct kgsl_pwrctrl *pwr;
+	if (device == NULL)
+		return 0;
+	pwr = &device->pwrctrl;
+	return snprintf(buf, PAGE_SIZE, "%u\n", pwr->appf_min_pwrlevel);
+}
+
+#endif
 
 static ssize_t kgsl_pwrctrl_thermal_pwrlevel_show(struct device *dev,
 					struct device_attribute *attr,
@@ -1158,6 +1356,14 @@ static DEVICE_ATTR(min_pwrlevel, 0644,
 static DEVICE_ATTR(thermal_pwrlevel, 0644,
 	kgsl_pwrctrl_thermal_pwrlevel_show,
 	kgsl_pwrctrl_thermal_pwrlevel_store);
+#ifdef CONFIG_APP_PROFILE
+static DEVICE_ATTR(appf_max_pwrlevel, 0644,
+		kgsl_pwrctrl_appf_max_pwrlevel_show,
+		kgsl_pwrctrl_appf_max_pwrlevel_store);
+static DEVICE_ATTR(appf_min_pwrlevel, 0644,
+		kgsl_pwrctrl_appf_min_pwrlevel_show,
+		kgsl_pwrctrl_appf_min_pwrlevel_store);
+#endif
 static DEVICE_ATTR(num_pwrlevels, 0444,
 	kgsl_pwrctrl_num_pwrlevels_show,
 	NULL);
@@ -1193,6 +1399,10 @@ static const struct device_attribute *pwrctrl_attr_list[] = {
 	&dev_attr_max_pwrlevel,
 	&dev_attr_min_pwrlevel,
 	&dev_attr_thermal_pwrlevel,
+#ifdef CONFIG_APP_PROFILE
+	&dev_attr_appf_max_pwrlevel,
+	&dev_attr_appf_min_pwrlevel,
+#endif
 	&dev_attr_num_pwrlevels,
 	&dev_attr_pmqos_active_latency,
 	&dev_attr_reset_count,
@@ -1487,6 +1697,10 @@ int kgsl_pwrctrl_init(struct kgsl_device *device)
 
 	pwr->max_pwrlevel = 0;
 	pwr->min_pwrlevel = pdata->num_levels - 2;
+#ifdef CONFIG_APP_PROFILE
+	pwr->appf_max_pwrlevel = 0;
+	pwr->appf_min_pwrlevel = pdata->num_levels - 2;
+#endif
 	pwr->thermal_pwrlevel = 0;
 
 	pwr->active_pwrlevel = pdata->init_level;

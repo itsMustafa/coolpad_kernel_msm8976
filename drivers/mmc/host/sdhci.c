@@ -928,7 +928,6 @@ static void sdhci_prepare_data(struct sdhci_host *host, struct mmc_command *cmd)
 
 	if (host->flags & (SDHCI_USE_SDMA | SDHCI_USE_ADMA))
 		host->flags |= SDHCI_REQ_USE_DMA;
-
 	if ((host->quirks2 & SDHCI_QUIRK2_USE_PIO_FOR_EMMC_TUNING) &&
 		(cmd->opcode ==  MMC_SEND_TUNING_BLOCK_HS200 ||
 		cmd->opcode == MMC_SEND_TUNING_BLOCK_HS400))
@@ -3875,10 +3874,12 @@ static void sdhci_cmdq_update_pm_qos(struct mmc_host *mmc,
 }
 
 #else
+
 static void sdhci_cmdq_set_transfer_params(struct mmc_host *mmc)
 {
 
 }
+
 static void sdhci_cmdq_clear_set_irqs(struct mmc_host *mmc, bool clear)
 {
 

@@ -52,6 +52,9 @@ enum pon_restart_reason {
 	PON_RESTART_REASON_RECOVERY	= 0x01,
 	PON_RESTART_REASON_BOOTLOADER	= 0x02,
 	PON_RESTART_REASON_RTC		= 0x03,
+	/*Added by zhaochengliang for exception stats,lafite-158(ql1530) 20160121,Begin*/
+	PON_RESTART_REASON_PANIC	= 0x04,
+	/*Added by zhaochengliang for exception stats,lafite-158(ql1530) 20160121,End*/
 };
 
 #ifdef CONFIG_QPNP_POWER_ON

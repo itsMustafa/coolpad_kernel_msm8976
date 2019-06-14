@@ -2082,6 +2082,14 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	if (IS_ERR_VALUE(ret))
 		goto commit_fail;
 
+	mutex_lock(&mdp5_data->ov_lock);
+	ret = mdss_mdp_display_commit_pp_post_vsync(mdp5_data->ctl, NULL,
+				NULL);
+	mutex_unlock(&mdp5_data->ov_lock);
+
+	if (IS_ERR_VALUE(ret))
+		goto commit_fail;
+
 	ret = mdss_mdp_ctl_update_fps(ctl);
 
 	mutex_lock(&mdp5_data->ov_lock);
@@ -2690,25 +2698,52 @@ int mdss_mdp_overlay_vsync_ctrl(struct msm_fb_data_type *mfd, int en)
 
 	if (!ctl)
 		return -ENODEV;
+	/*< LAFITE-3335 zhangrui 20160302 begin */
+#if 0
 	if (!ctl->ops.add_vsync_handler || !ctl->ops.remove_vsync_handler)
 		return -EOPNOTSUPP;
+#else
+	mutex_lock(&mdp5_data->ov_lock);
+	if (!ctl->ops.add_vsync_handler || !ctl->ops.remove_vsync_handler) {
+		rc = -EOPNOTSUPP;
+		pr_err_once("fb%d vsync handlers are not registered\n",
+				mfd->index);
+		goto end;
+	}
+#endif
+	/* LAFITE-3335 zhangrui 20160302 end >*/
 	if (!ctl->panel_data->panel_info.cont_splash_enabled
 			&& !mdss_mdp_ctl_is_power_on(ctl)) {
+		/*< LAFITE-3335 zhangrui 20160302 begin */
+#if 0
 		pr_debug("fb%d vsync pending first update en=%d\n",
 				mfd->index, en);
 		return -EPERM;
+#else
+		pr_debug("fb%d vsync pending first update en=%d, ctl power state:%d\n",
+				mfd->index, en, ctl->power_state);
+		rc = -EPERM;
+		goto end;
+#endif
+		/* LAFITE-3335 zhangrui 20160302 end >*/
 	}
 
 	pr_debug("fb%d vsync en=%d\n", mfd->index, en);
 
-	mutex_lock(&mdp5_data->ov_lock);
+	/*< LAFITE-3335 zhangrui 20160302 begin */
+	//mutex_lock(&mdp5_data->ov_lock);
+	/* LAFITE-3335 zhangrui 20160302 end >*/
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 	if (en)
 		rc = ctl->ops.add_vsync_handler(ctl, &ctl->vsync_handler);
 	else
 		rc = ctl->ops.remove_vsync_handler(ctl, &ctl->vsync_handler);
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
+	/*< LAFITE-3335 zhangrui 20160302 begin */
+	//mutex_unlock(&mdp5_data->ov_lock);
+end:
 	mutex_unlock(&mdp5_data->ov_lock);
+	/* LAFITE-3335 zhangrui 20160302 end >*/
 
 	return rc;
 }
@@ -4651,6 +4686,7 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 	int rc;
 	struct mdss_overlay_private *mdp5_data;
 	struct mdss_mdp_mixer *mixer;
+	struct mdss_panel_data *pdata;
 	int need_cleanup;
 
 	if (!mfd)
@@ -4689,6 +4725,13 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 	}
 
 	mutex_lock(&mdp5_data->ov_lock);
+
+	pdata = dev_get_platdata(&mfd->pdev->dev);
+	if (pdata && pdata->set_backlight) {
+		mutex_lock(&mfd->bl_lock);
+		pdata->set_backlight(pdata, 0);
+		mutex_unlock(&mfd->bl_lock);
+	}
 
 	mdss_mdp_overlay_free_fb_pipe(mfd);
 

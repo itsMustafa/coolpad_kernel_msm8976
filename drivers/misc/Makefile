@@ -66,7 +66,16 @@ obj-$(CONFIG_QFP_FUSE) += qfp_fuse.o
 obj-$(CONFIG_TI_DRV2667) += ti_drv2667.o
 obj-$(CONFIG_QPNP_MISC) += qpnp-misc.o
 obj-$(CONFIG_QCOM_LIQUID_DOCK)	+= qcom_liquid_dock.o
+#/*< LAFITE-222 xingbin 20151217 begin */
+obj-$(CONFIG_GET_HARDWARE_INFO) += hardware_info.o
+#/* LAFITE-222 xingbin 20151217 end >*/
+#LAFITE-957:yuquan added type-c orientation node begin
+#obj-$(CONFIG_TYPE_C_INFO) += type-c-info.o type-c_notify.o
+#LAFITE-957:yuquan added type-c orientation node end
 obj-y				+= qcom/
 obj-$(CONFIG_USB_EXT_TYPE_C_PERICOM)	+= type-c-pericom.o
 obj-$(CONFIG_USB_EXT_TYPE_C_TI)		+= type-c-ti.o
+# < LAFITE-1304 chaofubang 20160202 begin
+#obj-$(CONFIG_USB_EXT_TYPE_C_NXP)		+= type-c-nxp.o
+# LAFITE-1304 chaofubang 20160202 end >
 obj-$(CONFIG_UID_CPUTIME) 	+= uid_cputime.o

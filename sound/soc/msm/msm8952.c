@@ -20,6 +20,10 @@
 #include <linux/module.h>
 #include <linux/workqueue.h>
 #include <linux/input.h>
+/*add by qixuliang for external pa hardware version start*/
+#include <linux/proc_fs.h>
+#include <linux/bootreason.h>
+/*add by qixuliang for external pa hardware version end*/
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -32,6 +36,17 @@
 #include "../codecs/msm8x16-wcd.h"
 #include "../codecs/wsa881x-analog.h"
 #include <linux/regulator/consumer.h>
+#ifdef S2_AUDIO_FEATURE
+/* < LAFITE-388 chaofubang 20160214 begin */
+#ifdef CONFIG_USB_EXT_TYPE_C_TI
+#include "../../../drivers/misc/type-c-ti.h"
+#endif
+#ifdef CONFIG_USB_EXT_TYPE_C_NXP
+#include "../../../drivers/misc/type-c-nxp.h"
+#endif
+/* LAFITE-388 chaofubang 20160214 end >*/
+#endif //chenshuyun add
+
 #define DRV_NAME "msm8952-asoc-wcd"
 
 #define BTSCO_RATE_8KHZ 8000
@@ -48,6 +63,24 @@
 #define WCD_MBHC_DEF_RLOADS 5
 #define MAX_WSA_CODEC_NAME_LENGTH 80
 #define MSM_DT_MAX_PROP_SIZE 80
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-609 lichuangchuang 20160116 begin */
+/*#define SMART_PA_I2S_START_IN_PROBE*/
+/* LAFITE-609 lichuangchuang 20160116 end >*/
+/* < LAFITE-388 chaofubang 20160214 begin */
+#ifdef CONFIG_USB_EXT_TYPE_C_TI
+bool is_ti_type_c_register = false;
+#endif
+#ifdef CONFIG_USB_EXT_TYPE_C_NXP
+bool is_nxp_type_c_register = false;
+#endif
+/*LAFITE-5022 ZHUYAN 20160316 begin*/
+bool is_attached_ufp = false;
+/*LAFITE-5022 ZHUYAN 20160316 end*/
+static int usb_audio_mode = -1;
+extern void usb_audio_if_letv(bool *letv, int *pid);
+/* LAFITE-388 chaofubang 20160214 end >*/
+#endif //chenshuyun add
 
 enum btsco_rates {
 	RATE_8KHZ_ID,
@@ -71,6 +104,9 @@ static atomic_t auxpcm_mi2s_clk_ref;
 
 static int msm8952_enable_dig_cdc_clk(struct snd_soc_codec *codec, int enable,
 					bool dapm);
+/*add by qixuliang for external pa hardware version start*/
+static int add_hardware_proc_entry(void);
+/*add by qixuliang for external pa hardware version end*/
 static bool msm8952_swap_gnd_mic(struct snd_soc_codec *codec);
 static int msm8952_mclk_event(struct snd_soc_dapm_widget *w,
 			      struct snd_kcontrol *kcontrol, int event);
@@ -84,6 +120,8 @@ static int msm8952_ext_audio_switch_event(struct snd_soc_dapm_widget *w,
  * Need to report LINEIN
  * if R/L channel impedance is larger than 5K ohm
  */
+ #ifdef S2_AUDIO_FEATURE
+/* < LAFITE-3560 chaofubang 20160302 begin */
 static struct wcd_mbhc_config mbhc_cfg = {
 	.read_fw_bin = false,
 	.calibration = NULL,
@@ -92,15 +130,35 @@ static struct wcd_mbhc_config mbhc_cfg = {
 	.swap_gnd_mic = NULL,
 	.hs_ext_micbias = false,
 	.key_code[0] = KEY_MEDIA,
-	.key_code[1] = KEY_VOICECOMMAND,
-	.key_code[2] = KEY_VOLUMEUP,
-	.key_code[3] = KEY_VOLUMEDOWN,
+	.key_code[1] = KEY_VOLUMEUP,
+	.key_code[2] = KEY_VOLUMEDOWN,
+	.key_code[3] = 0,
 	.key_code[4] = 0,
 	.key_code[5] = 0,
 	.key_code[6] = 0,
 	.key_code[7] = 0,
 	.linein_th = 5000,
 };
+/* LAFITE-3560 chaofubang 20160302 end >*/
+#else
+static struct wcd_mbhc_config mbhc_cfg = {
+	.read_fw_bin = false,
+	.calibration = NULL,
+	.detect_extn_cable = true,
+	.mono_stero_detection = false,
+	.swap_gnd_mic = NULL,
+	.hs_ext_micbias = true,
+	.key_code[0] = KEY_MEDIA,
+	.key_code[1] = KEY_VOLUMEUP,
+	.key_code[2] = KEY_VOLUMEDOWN,
+	.key_code[3] = 0,
+	.key_code[4] = 0,
+	.key_code[5] = 0,
+	.key_code[6] = 0,
+	.key_code[7] = 0,
+	.linein_th = 5000,
+};
+#endif //chenshuyun add
 
 static struct afe_clk_cfg mi2s_rx_clk = {
 	AFE_API_VERSION_I2S_CONFIG,
@@ -131,7 +189,21 @@ static struct afe_clk_cfg wsa_ana_clk = {
 	Q6AFE_LPASS_MODE_CLK2_VALID,
 	0,
 };
-
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-609 lichuangchuang 20160116 begin */
+static struct afe_clk_cfg lpass_mi2s_enable = {
+	AFE_API_VERSION_I2S_CONFIG,
+	Q6AFE_LPASS_IBIT_CLK_1_P536_MHZ,
+	Q6AFE_LPASS_OSR_CLK_12_P288_MHZ,
+	Q6AFE_LPASS_CLK_SRC_INTERNAL,
+	Q6AFE_LPASS_CLK_ROOT_DEFAULT,
+	Q6AFE_LPASS_MODE_CLK1_VALID,
+	0,
+};
+static bool Smart_PA_I2S_enabled = false;
+static bool quin_mi2s_enabled = false;
+/* LAFITE-609 lichuangchuang 20160116 end >*/
+#endif //chenshuyun add
 static char const *rx_bit_format_text[] = {"S16_LE", "S24_LE"};
 static const char *const ter_mi2s_tx_ch_text[] = {"One", "Two"};
 static const char *const loopback_mclk_text[] = {"DISABLE", "ENABLE"};
@@ -310,6 +382,22 @@ static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
 					__func__, "ext_spk_gpio");
 			return ret;
 		}
+		/*1 PWM*/
+		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
+		udelay(2);
+		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, 0);
+		udelay(2);
+		/*2 PWM*/
+		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
+		udelay(2);
+		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, 0);
+		udelay(2);
+		/*3 PWM*/
+		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
+		udelay(2);
+		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, 0);
+		udelay(2);
+		/*4 for high*/
 		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
 
 		/* Some devices have secondary GPIO that needs to set */
@@ -1436,10 +1524,21 @@ static int msm_quin_mi2s_snd_startup(struct snd_pcm_substream *substream)
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
 	struct msm8916_asoc_mach_data *pdata =
 			snd_soc_card_get_drvdata(card);
+	#ifdef S2_AUDIO_FEATURE
+	/*< LAFITE-609 lichuangchuang 20160116 begin */
+	struct snd_soc_codec *codec = rtd->codec;
+	#endif //chenshuyun add
 	int ret = 0, val = 0;
 
 	pr_debug("%s(): substream = %s  stream = %d\n", __func__,
 				substream->name, substream->stream);
+	#ifdef S2_AUDIO_FEATURE
+	if(Smart_PA_I2S_enabled == true){
+		msm_q6_enable_mi2s(codec, false);
+	}
+	quin_mi2s_enabled = true;
+	/* LAFITE-609 lichuangchuang 20160116 end >*/
+	#endif //chenshuyun add
 	if (pdata->vaddr_gpio_mux_quin_ctl) {
 		val = ioread32(pdata->vaddr_gpio_mux_quin_ctl);
 		val = val | 0x00000001;
@@ -1476,7 +1575,6 @@ static void msm_quin_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_card *card = rtd->card;
 	struct msm8916_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
-
 	pr_debug("%s(): substream = %s  stream = %d\n", __func__,
 				substream->name, substream->stream);
 	if ((pdata->ext_pa & QUIN_MI2S_ID) == QUIN_MI2S_ID) {
@@ -1485,6 +1583,13 @@ static void msm_quin_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 			pr_err("%s:clock disable failed\n", __func__);
 		if (atomic_read(&quin_mi2s_clk_ref) > 0)
 			atomic_dec(&quin_mi2s_clk_ref);
+		#ifdef S2_AUDIO_FEATURE
+		/* < LAFITE-1408 chaofubang 20160228 begin */
+		if (atomic_read(&quin_mi2s_clk_ref) == 0) {
+			quin_mi2s_enabled = false;
+		}
+		/* LAFITE-1408 chaofubang 20160228 end >*/
+		#endif //chenshuyun add
 		ret = msm_gpioset_suspend(CLIENT_WCD_INT, "quin_i2s");
 		if (ret < 0) {
 			pr_err("%s: gpio set cannot be de-activated %sd",
@@ -1508,7 +1613,7 @@ static void *def_msm8952_wcd_mbhc_cal(void)
 	}
 
 #define S(X, Y) ((WCD_MBHC_CAL_PLUG_TYPE_PTR(msm8952_wcd_cal)->X) = (Y))
-	S(v_hs_max, 1500);
+	S(v_hs_max, 1700);
 #undef S
 #define S(X, Y) ((WCD_MBHC_CAL_BTN_DET_PTR(msm8952_wcd_cal)->X) = (Y))
 	S(num_btn, WCD_MBHC_DEF_BUTTONS);
@@ -1531,16 +1636,31 @@ static void *def_msm8952_wcd_mbhc_cal(void)
 	 * 210-290 == Button 2
 	 * 360-680 == Button 3
 	 */
-	btn_low[0] = 75;
-	btn_high[0] = 75;
-	btn_low[1] = 150;
-	btn_high[1] = 150;
-	btn_low[2] = 225;
-	btn_high[2] = 225;
-	btn_low[3] = 450;
-	btn_high[3] = 450;
-	btn_low[4] = 500;
-	btn_high[4] = 500;
+	 #ifdef S2_AUDIO_FEATURE
+	/* < LAFITE-3560 chaofubang 20160302 begin */
+	btn_low[0] =100;
+	btn_high[0] = 100;
+	btn_low[1] = 250;
+	btn_high[1] = 250;
+	btn_low[2] = 420;
+	btn_high[2] = 420;
+	btn_low[3] = 420;
+	btn_high[3] = 420;
+	btn_low[4] = 420;
+	btn_high[4] = 420;
+	/* LAFITE-3560 chaofubang 20160302 end >*/
+    #else
+		btn_low[0] = 100;
+		btn_high[0] = 100;
+		btn_low[1] = 210;
+		btn_high[1] = 210;
+		btn_low[2] = 450;
+		btn_high[2] = 450;
+		btn_low[3] = 450;
+		btn_high[3] = 450;
+		btn_low[4] = 450;
+		btn_high[4] = 450;
+	#endif //chenshuyun add
 
 	return msm8952_wcd_cal;
 }
@@ -2420,6 +2540,25 @@ static struct snd_soc_dai_link msm8952_dai[] = {
 		.ops = &msm8952_quin_mi2s_be_ops,
 		.ignore_suspend = 1,
 	},
+	#ifdef S2_AUDIO_FEATURE
+	/*< LAFITE-67 chaofubang 20151225 begin */
+	{
+		.name = "QUIN_MI2S Hostless",
+		.stream_name = "QUIN_MI2S Hostless",
+		.cpu_dai_name = "QUIN_MI2S_RX_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+	/* LAFITE-67 chaofubang 20151225 end >*/
+	#endif //chenshuyun add
 };
 
 static int msm8952_wsa881x_init(struct snd_soc_dapm_context *dapm)
@@ -2486,11 +2625,69 @@ void msm8952_disable_mclk(struct work_struct *work)
 	mutex_unlock(&pdata->cdc_mclk_mutex);
 }
 
+/*add by qixuliang for external pa hardware version start*/
+static ssize_t hardware_version_entry_read(struct file *file,
+		char __user *buffer, size_t count, loff_t *offset)
+{
+	int hw_ver = yl_get_hardware_version();
+
+	if ((hw_ver&0x0f) > 4) {  /*for C106*/
+		if (copy_to_user(buffer, "1", 2))
+			return -EFAULT;
+	} else if (hw_ver&0x10) {  /*for C103*/
+		if (copy_to_user(buffer, "1", 2))
+			return -EFAULT;
+	} else {
+		if (copy_to_user(buffer, "0", 2))
+			return -EFAULT;
+	}
+
+	return count;
+}
+
+static const struct file_operations hardware_version_operations = {
+	.owner = THIS_MODULE,
+	.read = hardware_version_entry_read,
+};
+
+static int add_hardware_proc_entry(void)
+{
+	struct proc_dir_entry *p = NULL;
+	struct proc_dir_entry *proc_file = NULL;
+
+	p = proc_mkdir("hardware", NULL);
+	if (p == NULL)
+		return -ENOMEM;
+
+	proc_file = proc_create("ext_pa_status", 0444, p,
+				&hardware_version_operations);
+	if (proc_file == NULL)
+		return -ENOMEM;
+
+	return 0;
+}
+/*add by qixuliang for external pa hardware version end*/
+
 static bool msm8952_swap_gnd_mic(struct snd_soc_codec *codec)
 {
 	struct snd_soc_card *card = codec->card;
 	struct msm8916_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
-	int value, ret;
+#ifdef S2_AUDIO_FEATURE
+	/*< LAFITE-293 chaofubang 20160107 begin */
+	int value;
+
+	pr_info("%s: configure gpios for US_EU\n", __func__);
+
+	if (!gpio_is_valid(pdata->us_euro_gpio)) {
+		pr_err("%s: Invalid gpio: %d", __func__, pdata->us_euro_gpio);
+		return false;
+	}
+	value = __gpio_get_value(pdata->us_euro_gpio);
+	gpio_direction_output(pdata->us_euro_gpio, !value);
+	pr_info("%s: swap select switch %d to %d\n", __func__, value, !value);
+	/* LAFITE-293 chaofubang 20160107 end >*/
+#else
+    int value, ret;
 
 	pr_debug("%s: configure gpios for US_EU\n", __func__);
 
@@ -2514,6 +2711,7 @@ static bool msm8952_swap_gnd_mic(struct snd_soc_codec *codec)
 				__func__, "us_eu_gpio");
 		return false;
 	}
+#endif //chenshuyun add
 
 	return true;
 }
@@ -2688,11 +2886,229 @@ int msm8952_init_wsa_switch_supply(struct platform_device *pdev,
 	atomic_set(&pdata->wsa_switch_supply.ref, 0);
 	return ret;
 }
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-609 lichuangchuang 20160116 begin */
+int msm_q6_enable_mi2s_clocks(bool enable)
+{
+	union afe_port_config port_config;
+	int rc = 0;
+	pr_debug("set msm_q6_enable_mi2s_clocks\n");
+	Smart_PA_I2S_enabled = enable;
+	if(enable) {
+		port_config.i2s.channel_mode = AFE_PORT_I2S_SD0;
+		port_config.i2s.mono_stereo = MSM_AFE_CH_STEREO;
+		port_config.i2s.data_format= 0;
+		port_config.i2s.bit_width = 16;
+		port_config.i2s.reserved = 0;
+		port_config.i2s.i2s_cfg_minor_version = AFE_API_VERSION_I2S_CONFIG;
+		port_config.i2s.sample_rate = 48000;
+		port_config.i2s.ws_src = 1;
+		rc = afe_port_start(AFE_PORT_ID_QUINARY_MI2S_RX, &port_config, 48000);
+		if (IS_ERR_VALUE(rc)) {
+			printk(KERN_ERR"fail to open AFE port\n"); return -EINVAL;
+		}
+	} else {
+		rc = afe_close(AFE_PORT_ID_QUINARY_MI2S_RX);
+		if (IS_ERR_VALUE(rc)) {
+			printk(KERN_ERR"fail to close AFE port\n");
+			return -EINVAL;
+		}
+	}
+	return rc;
+}
+
+int msm_q6_enable_mi2s(struct snd_soc_codec *codec, bool enable)
+{
+	int ret;
+	int val = 0;
+	struct msm8916_asoc_mach_data *pdata = NULL;
+
+	if(enable == Smart_PA_I2S_enabled)
+	{
+		pr_info("%s: status not change, no need to config.\n", __func__);
+		return 0;
+	}
+
+	if((quin_mi2s_enabled || Smart_PA_I2S_enabled) && enable ){
+		pr_info("%s: i2s is enabled, no need to enabled.\n", __func__);
+		return 0;
+	}
+	/*< LAFITE-700 lichuangchuang 20160121 begin */
+	if(enable){
+		pdata = snd_soc_card_get_drvdata(codec->card);
+
+		if (pdata->vaddr_gpio_mux_quin_ctl) {
+			val = ioread32(pdata->vaddr_gpio_mux_quin_ctl);
+			val = val | 0x00000001;
+			iowrite32(val, pdata->vaddr_gpio_mux_quin_ctl);
+		} else {
+			pr_err("%s: failed to conf internal codec mux\n", __func__);
+			return -EINVAL;
+		}
+		lpass_mi2s_enable.clk_val1 = Q6AFE_LPASS_IBIT_CLK_1_P536_MHZ;
+		ret = afe_set_lpass_clock(AFE_PORT_ID_QUINARY_MI2S_RX, &lpass_mi2s_enable);
+		if (ret < 0) {
+			pr_err("%s: afe_set_lpass_clock failed\n", __func__);
+		}
+		ret = msm_gpioset_activate(CLIENT_WCD_INT, "quin_i2s");
+		if (ret < 0) {
+			pr_err("failed to enable codec gpios\n");
+			return -EINVAL;
+		}
+		msm_q6_enable_mi2s_clocks(enable);
+	} else {
+		msm_q6_enable_mi2s_clocks(enable);
+		lpass_mi2s_enable.clk_val1 = Q6AFE_LPASS_IBIT_CLK_DISABLE;
+		ret = afe_set_lpass_clock(AFE_PORT_ID_QUINARY_MI2S_RX, &lpass_mi2s_enable);
+		if (ret < 0) {
+			pr_err("%s: afe_set_lpass_clock failed\n", __func__);
+		}
+		ret = msm_gpioset_suspend(CLIENT_WCD_INT, "quin_i2s");
+		if (ret < 0) {
+			pr_err("failed to suspend codec gpios\n");
+			return -EINVAL;
+		}
+	}
+	/* LAFITE-700 lichuangchuang 20160121 end >*/
+	return 0;
+}
+/* LAFITE-609 lichuangchuang 20160116 end >*/
+
+/*< LAFITE-293 chaofubang 20160114 begin */
+int us_eu_switch_gpio_request(struct msm8916_asoc_mach_data *pdata)
+{
+	int ret;
+	if (!gpio_is_valid(pdata->us_euro_gpio)) {
+		pr_err("%s: Invalid gpio: %d", __func__,
+				pdata->us_euro_gpio);
+		return -EINVAL;
+	} else {
+		ret = gpio_request(pdata->us_euro_gpio,
+						   "us_euro_gpio");
+		if (ret) {
+			pr_err("failed to request us_euro gpio\n");
+			return ret;
+		}
+		return 0;
+	}
+}
+/* LAFITE-293 chaofubang 20160114 end >*/
+
+/* < LAFITE-388 chaofubang 20160214 begin */
+static ssize_t usb_audio_show(struct device *dev,
+                                                   struct device_attribute *attr, char *buf)
+{
+	int rv = 0;
+	bool if_letv = false;
+	int pid;
+
+	usb_audio_if_letv(&if_letv,&pid);
+	if(if_letv)
+		rv = scnprintf(buf, PAGE_SIZE, "%d\n", if_letv);
+	else
+		rv = scnprintf(buf, PAGE_SIZE, "%d\n", 0);
+	return rv;
+}
+
+static ssize_t usb_audio_pid_show (struct device * dev,
+	                                                       struct device_attribute * attr,  char * buf)
+{
+	int rv = 0;
+	bool if_letv = false;
+	int pid;
+
+	usb_audio_if_letv(&if_letv,&pid);
+	if(if_letv)
+		rv = scnprintf(buf, PAGE_SIZE, "0x%x\n", pid);
+	else
+		rv = scnprintf(buf, PAGE_SIZE, "%d\n", 0);
+	return rv;
+}
+
+/*LAFITE-5022 ZHUYAN 20160316 begin*/
+static ssize_t cc_state_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int rv = 0;
+
+	rv = scnprintf(buf, PAGE_SIZE, "%d\n", is_attached_ufp);
+	return rv;
+}
+/*LAFITE-5022 ZHUYAN 20160316 end*/
+
+static DEVICE_ATTR(usb_audio,  S_IRUGO,
+		   usb_audio_show,
+		   NULL);
+static DEVICE_ATTR(usb_audio_pid,  S_IRUGO,
+		   usb_audio_pid_show,
+		   NULL);
+/*LAFITE-5022 ZHUYAN 20160316 begin*/
+static DEVICE_ATTR(cc_state,  S_IRUGO,
+		   cc_state_show,
+		   NULL);
+/*LAFITE-5022 ZHUYAN 20160316 end*/
+
+
+static struct attribute *usb_audio_attrs[] = {
+	&dev_attr_usb_audio.attr,
+	&dev_attr_usb_audio_pid.attr,
+	/*LAFITE-5022 ZHUYAN 20160316 begin*/
+	&dev_attr_cc_state.attr,
+	/*LAFITE-5022 ZHUYAN 20160316 end*/
+	NULL,
+};
+
+static struct attribute_group usb_audio_attr_group = {
+	.attrs = usb_audio_attrs,
+};
+
+static int usb_audio_mode_param_set(const char *val, struct kernel_param *kp)
+{
+	param_set_int(val, kp);
+
+	if(1 == usb_audio_mode) {
+                pr_info("%s, analog usb audio mode !!\n",__func__);
+#ifdef CONFIG_USB_EXT_TYPE_C_NXP
+		if (is_nxp_type_c_register) {
+			ptn5150_usb_audio_mode_set(true);
+		}
+#endif
+#ifdef CONFIG_USB_EXT_TYPE_C_TI
+		if (is_ti_type_c_register) {
+			tiusb_audio_mode_set(true);
+		}
+#endif
+	} else {
+                pr_info("%s, digital usb audio mode!!\n",__func__);
+#ifdef CONFIG_USB_EXT_TYPE_C_NXP
+		if (is_nxp_type_c_register) {
+			ptn5150_usb_audio_mode_set(false);
+		}
+#endif
+#ifdef CONFIG_USB_EXT_TYPE_C_NXP
+		if (is_ti_type_c_register) {
+			tiusb_audio_mode_set(false);
+		}
+#endif
+	}
+	return 0;
+}
+
+module_param_call(usb_audio_mode, usb_audio_mode_param_set,
+	                                       param_get_int, &usb_audio_mode, 0644);
+/* LAFITE-388 chaofubang 20160214 end >*/
+#endif //chenshuyun add
 
 static int msm8952_asoc_machine_probe(struct platform_device *pdev)
 {
 	struct snd_soc_card *card;
 	struct msm8916_asoc_mach_data *pdata = NULL;
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-609 lichuangchuang 20160116 begin */
+#ifdef SMART_PA_I2S_START_IN_PROBE
+	struct snd_soc_codec *codec;
+#endif
+/* LAFITE-609 lichuangchuang 20160116 end >*/
+#endif //chenshuyun add
 	const char *hs_micbias_type = "qcom,msm-hs-micbias-type";
 	const char *ext_pa = "qcom,msm-ext-pa";
 	const char *mclk = "qcom,msm-mclk-freq";
@@ -2987,6 +3403,32 @@ static int msm8952_asoc_machine_probe(struct platform_device *pdev)
 			ret);
 		goto err;
 	}
+
+	/*add by qixuliang for external pa hardware version start*/
+	add_hardware_proc_entry();
+	/*add by qixuliang for external pa hardware version end*/
+#ifdef S2_AUDIO_FEATURE
+/*< LAFITE-609 lichuangchuang 20160116 begin */
+#ifdef SMART_PA_I2S_START_IN_PROBE
+	codec = card->rtd->codec;
+	msm_q6_enable_mi2s(codec,true);
+#endif
+/* LAFITE-609 lichuangchuang 20160116 end >*/
+
+	/*< LAFITE-293 chaofubang 20160114 begin */
+	ret = us_eu_switch_gpio_request(pdata);
+	if (ret < 0)
+		pr_err("%s:  us eu switch gpio request failed\n",
+				__func__);
+	/* LAFITE-293 chaofubang 20160114 end >*/
+	/* < LAFITE-388 chaofubang 20160214 begin */
+	ret = sysfs_create_group(&pdev->dev.kobj, &usb_audio_attr_group);
+	if (ret) {
+		dev_err(&pdev->dev, "Unable to show usb audio, error: %d\n",ret);
+	}
+	/* LAFITE-388 chaofubang 20160214 end >*/
+#endif //chenshuyun add
+
 	return 0;
 err:
 	if (pdata->vaddr_gpio_mux_spkr_ctl)
@@ -3032,6 +3474,11 @@ static int msm8952_asoc_machine_remove(struct platform_device *pdev)
 		mutex_destroy(&pdata->wsa_mclk_mutex);
 	}
 	snd_soc_unregister_card(card);
+#ifdef S2_AUDIO_FEATURE
+	/* < LAFITE-388 chaofubang 20160214 begin */
+	sysfs_remove_group(&pdev->dev.kobj, &usb_audio_attr_group);
+	/* LAFITE-388 chaofubang 20160214 end >*/
+#endif //chenshuyun add
 	mutex_destroy(&pdata->cdc_mclk_mutex);
 	return 0;
 }

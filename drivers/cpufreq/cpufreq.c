@@ -28,6 +28,9 @@
 #include <linux/slab.h>
 #include <linux/syscore_ops.h>
 #include <linux/tick.h>
+#ifdef CONFIG_APP_PROFILE
+#include <linux/pm_qos.h>
+#endif
 #include <trace/events/power.h>
 
 /**
@@ -54,6 +57,11 @@ struct cpufreq_cpu_save_data {
 static DEFINE_PER_CPU(struct cpufreq_cpu_save_data, cpufreq_policy_save);
 #endif
 
+#ifdef CONFIG_APP_PROFILE
+/* Serialize policy access across hotplug */
+static DEFINE_PER_CPU(struct mutex, cpu_policy_hp_mutex);
+static DEFINE_PER_CPU(int, cpufreq_policy_cpu);
+#endif
 static inline bool has_target(void)
 {
 	return cpufreq_driver->target_index || cpufreq_driver->target;
@@ -423,6 +431,10 @@ show_one(cpuinfo_transition_latency, cpuinfo.transition_latency);
 show_one(scaling_min_freq, min);
 show_one(scaling_max_freq, max);
 show_one(scaling_cur_freq, cur);
+#ifdef CONFIG_APP_PROFILE
+show_one(policy_min_freq, user_policy.min);
+show_one(policy_max_freq, user_policy.max);
+#endif
 
 static int cpufreq_set_policy(struct cpufreq_policy *policy,
 				struct cpufreq_policy *new_policy);
@@ -647,6 +659,10 @@ cpufreq_freq_attr_rw(scaling_min_freq);
 cpufreq_freq_attr_rw(scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
+#ifdef CONFIG_APP_PROFILE
+cpufreq_freq_attr_ro(policy_min_freq);
+cpufreq_freq_attr_ro(policy_max_freq);
+#endif
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -660,6 +676,10 @@ static struct attribute *default_attrs[] = {
 	&scaling_driver.attr,
 	&scaling_available_governors.attr,
 	&scaling_setspeed.attr,
+#ifdef CONFIG_APP_PROFILE
+	&policy_min_freq.attr,
+	&policy_max_freq.attr,
+#endif
 	NULL
 };
 
@@ -1977,6 +1997,10 @@ int cpufreq_get_policy(struct cpufreq_policy *policy, unsigned int cpu)
 }
 EXPORT_SYMBOL(cpufreq_get_policy);
 
+#ifdef CONFIG_APP_PROFILE
+extern unsigned int get_nearest_cpufreq(struct cpufreq_policy *policy,
+					unsigned int set_freq);
+#endif
 /*
  * policy : current policy.
  * new_policy: policy to be set.
@@ -1985,7 +2009,42 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 				struct cpufreq_policy *new_policy)
 {
 	int ret = 0, failed = 1;
+#ifdef CONFIG_APP_PROFILE
+	unsigned int qmin, qmax, qapppri;
+	unsigned int pmin = new_policy->min;
+	unsigned int pmax = new_policy->max;
 
+	qmin = min((unsigned int)pm_qos_request(PM_QOS_CPU_FREQ_MIN),
+		   policy->user_policy.max);
+	qmax = max((unsigned int)pm_qos_request(PM_QOS_CPU_FREQ_MAX),
+		   policy->user_policy.min);
+	qmin = get_nearest_cpufreq(new_policy, qmin);
+	qmax = get_nearest_cpufreq(new_policy, qmax);
+	/* added for start app priority */
+	qapppri = (unsigned int)pm_qos_request(PM_QOS_APP_START_PRI);
+
+	/* cuizhouhua added for start app priority, set to
+	* force /dev/cpu_freq_min can bigger than /dev/cpu_freq_max
+	*/
+	if (qapppri && (qmin > qmax))
+		qmax = qmin;
+
+	pr_debug("setting new policy for CPU %u: %u - %u (%u - %u) kHz\n",
+		new_policy->cpu, pmin, pmax, qmin, qmax);
+
+	/* clamp the new policy to PM QoS limits */
+	new_policy->min = max(pmin, qmin);
+	new_policy->max = min(pmax, qmax);
+
+	memcpy(&new_policy->cpuinfo, &policy->cpuinfo,
+				sizeof(struct cpufreq_cpuinfo));
+
+	if (new_policy->min > policy->user_policy.max ||
+	    new_policy->max < policy->user_policy.min) {
+		ret = -EINVAL;
+		goto error_out;
+	}
+#else
 	pr_debug("setting new policy for CPU %u: %u - %u kHz\n", new_policy->cpu,
 		new_policy->min, new_policy->max);
 
@@ -1997,6 +2056,8 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 		goto error_out;
 	}
 
+
+#endif
 	/* verify the cpu speed can be set within this limit */
 	ret = cpufreq_driver->verify(new_policy);
 	if (ret)
@@ -2082,6 +2143,10 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 	}
 
 error_out:
+#ifdef CONFIG_APP_PROFILE
+	new_policy->min = pmin;
+	new_policy->max = pmax;
+#endif
 	return ret;
 }
 
@@ -2150,20 +2215,44 @@ static int cpufreq_cpu_callback(struct notifier_block *nfb,
 
 		switch (action & ~CPU_TASKS_FROZEN) {
 		case CPU_ONLINE:
+#ifdef CONFIG_APP_PROFILE
+			mutex_lock(&per_cpu(cpu_policy_hp_mutex, cpu));
+#endif
 			__cpufreq_add_dev(dev, NULL, frozen);
+#ifdef CONFIG_APP_PROFILE
+			mutex_unlock(&per_cpu(cpu_policy_hp_mutex, cpu));
+#endif
 			cpufreq_update_policy(cpu);
 			break;
 
 		case CPU_DOWN_PREPARE:
+#ifdef CONFIG_APP_PROFILE
+			mutex_lock(&per_cpu(cpu_policy_hp_mutex, cpu));
+#endif
 			__cpufreq_remove_dev_prepare(dev, NULL, frozen);
+#ifdef CONFIG_APP_PROFILE
+			mutex_unlock(&per_cpu(cpu_policy_hp_mutex, cpu));
+#endif
 			break;
 
 		case CPU_POST_DEAD:
+#ifdef CONFIG_APP_PROFILE
+			mutex_lock(&per_cpu(cpu_policy_hp_mutex, cpu));
+#endif
 			__cpufreq_remove_dev_finish(dev, NULL, frozen);
+#ifdef CONFIG_APP_PROFILE
+			mutex_unlock(&per_cpu(cpu_policy_hp_mutex, cpu));
+#endif
 			break;
 
 		case CPU_DOWN_FAILED:
+#ifdef CONFIG_APP_PROFILE
+			mutex_lock(&per_cpu(cpu_policy_hp_mutex, cpu));
+#endif
 			__cpufreq_add_dev(dev, NULL, frozen);
+#ifdef CONFIG_APP_PROFILE
+			mutex_unlock(&per_cpu(cpu_policy_hp_mutex, cpu));
+#endif
 			break;
 		}
 	}
@@ -2286,15 +2375,62 @@ int cpufreq_unregister_driver(struct cpufreq_driver *driver)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(cpufreq_unregister_driver);
+#ifdef CONFIG_APP_PROFILE
+static int cpu_freq_notify(struct notifier_block *b,
+			   unsigned long l, void *v);
 
+static struct notifier_block min_freq_notifier = {
+	.notifier_call = cpu_freq_notify,
+};
+static struct notifier_block max_freq_notifier = {
+	.notifier_call = cpu_freq_notify,
+};
+
+static int cpu_freq_notify(struct notifier_block *b,
+			   unsigned long l, void *v)
+{
+	int cpu;
+
+	pr_debug("cpufreq PM QoS %s %lu\n",
+		b == &min_freq_notifier ? "min" : "max", l);
+	for_each_online_cpu(cpu) {
+		struct cpufreq_policy *policy = NULL;
+		mutex_lock(&per_cpu(cpu_policy_hp_mutex, cpu));
+		policy = cpufreq_cpu_get(cpu);
+		if (policy) {
+			cpufreq_update_policy(policy->cpu);
+			cpufreq_cpu_put(policy);
+		}
+		mutex_unlock(&per_cpu(cpu_policy_hp_mutex, cpu));
+	}
+	return NOTIFY_OK;
+}
+#endif
 static int __init cpufreq_core_init(void)
 {
+#ifdef CONFIG_APP_PROFILE
+	int rc, cpu;
+#endif
 	if (cpufreq_disabled())
 		return -ENODEV;
 
+#ifdef CONFIG_APP_PROFILE
+	for_each_possible_cpu(cpu) {
+		per_cpu(cpufreq_policy_cpu, cpu) = -1;
+		mutex_init(&per_cpu(cpu_policy_hp_mutex, cpu));
+		}
+#endif
 	cpufreq_global_kobject = kobject_create();
 	BUG_ON(!cpufreq_global_kobject);
 	register_syscore_ops(&cpufreq_syscore_ops);
+#ifdef CONFIG_APP_PROFILE
+	rc = pm_qos_add_notifier(PM_QOS_CPU_FREQ_MIN,
+				 &min_freq_notifier);
+	BUG_ON(rc);
+	rc = pm_qos_add_notifier(PM_QOS_CPU_FREQ_MAX,
+				 &max_freq_notifier);
+	BUG_ON(rc);
+#endif
 
 	return 0;
 }

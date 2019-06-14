@@ -25,10 +25,23 @@
 #include "mdss_dsi.h"
 #include "mdss_dba_utils.h"
 
+#include <linux/yl_lcd.h>
+#ifdef CONFIG_YL_TPS65132
+#include <linux/tps_65132.h>
+#endif
+
 #define DT_CMD_HDR 6
 #define MIN_REFRESH_RATE 48
 #define DEFAULT_MDP_TRANSFER_TIME 14000
-
+/*< LAFITE-222 xingbin 20151217 begin */
+#ifdef CONFIG_GET_HARDWARE_INFO
+#include <asm/hardware_info.h>
+char tmp_panel_name[100];
+#endif
+/* LAFITE-222 xingbin 20151217 end >*/
+/* < LAFITE-4190 xingbin 20160307 begin */
+int lcd_resume_flag =0 ;
+/* LAFITE-4190 xingbin 20160307 end>*/
 DEFINE_LED_TRIGGER(bl_led_trigger);
 
 #define CEIL(x, y)	(((x) + ((y)-1)) / (y))
@@ -40,6 +53,10 @@ static char rc_range_max_qp[] = {4, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11, 12,
 	13, 13, 15};
 static char rc_range_bpg_offset[] = {2, 0, 0, -2, -4, -6, -8, -8, -8, -10, -10,
 	-12, -12, -12, -12};
+
+#ifdef CONFIG_YL_TPS65132
+bool ili9881_ic_flag;
+#endif
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -179,13 +196,33 @@ static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
-
+/* < LAFITE-4190 xingbin 20160307 begin */
+#if 1
+static char led_pwm1[3] = {0x51, 0x0F,0xFF};	/* DTYPE_DCS_WRITE1 */
+static char led_diming_mode[2] = {0x53, 0x2c};	/* DTYPE_DCS_WRITE1 */
+static char led_cabc_mode[2] = {0x55, 0x03};
+static struct dsi_cmd_desc backlight_cmd[] = {
+	{{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_diming_mode)},led_diming_mode},
+	{{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_cabc_mode)},led_cabc_mode},
+	{{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm1)},led_pwm1},
+};
+/*< LAFITE-7866 xingbin 20160415 begin*/
+static struct dsi_cmd_desc  diming_enable_cmd = {
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_diming_mode)},led_diming_mode
+};
+/* LAFITE-7866 xingbin 20160415 end >*/
+#else
 static char led_pwm1[2] = {0x51, 0x0};	/* DTYPE_DCS_WRITE1 */
 static struct dsi_cmd_desc backlight_cmd = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm1)},
 	led_pwm1
 };
-
+#endif
+/*< LAFITE-5675 xingbin lcd flicker at power on begin*/
+char currtask_name[FIELD_SIZEOF(struct task_struct, comm) + 1];
+/*< LAFITE-9176 xingbin 20160426 begin*/
+static u32 kernel_level_first = 1;
+/* LAFITE-9176 xingbin 20160426 end >*/
 static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 {
 	struct dcs_cmd_req cmdreq;
@@ -198,11 +235,71 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 	}
 
 	pr_debug("%s: level=%d\n", __func__, level);
-
-	led_pwm1[1] = (unsigned char)level;
+	//diming control
+	if((strcmp(get_task_comm(currtask_name, current), "sh")==0)||(lcd_resume_flag==1))
+		led_diming_mode[1] = 0x24;
+	else
+		led_diming_mode[1] = 0x2c;
+	//cabc control
+/*< LAFITE-9176 xingbin 20160426 begin*/
+	if(level<64)
+		led_cabc_mode[1] = 0x00;
+	else
+		led_cabc_mode[1] = 0x03;
+/* LAFITE-9176 xingbin 20160426 end >*/
+	//min-level control
+	if(level<32&&level>0)
+		level = 32;
+	if(pinfo->panel_supply_order==LCD_PANEL_SUPPLY_SECOND){
+		led_pwm1[1] = (unsigned char)(level>>4);
+		led_pwm1[2] = 0;
+	/*< LAFITE-5082 xingbin lcd flicker at low brightness begin */
+		if(lcd_resume_flag!=1)
+			mdelay(100);
+	/* LAFITE-5082 xingbin lcd flicker at low brightness end > */
+	}else{
+		led_pwm1[1] = (unsigned char)(level>>8);
+		led_pwm1[2] = (unsigned char)level&0x0FF;
+	}
 
 	memset(&cmdreq, 0, sizeof(cmdreq));
-	cmdreq.cmds = &backlight_cmd;
+	cmdreq.cmds = backlight_cmd;
+	cmdreq.cmds_cnt = 3;
+	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+/*< LAFITE-9176 xingbin 20160426 begin*/
+	if((lcd_resume_flag==1)&&(kernel_level_first==0)){
+		led_trigger_event(bl_led_trigger, 4095);
+	}
+/* LAFITE-9176 xingbin 20160426 end >*/
+	if(level==0){
+		led_trigger_event(bl_led_trigger, 0);
+	}
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+}
+/* LAFITE-4190 xingbin 20160307 end>*/
+/*< LAFITE-7866 xingbin 20160415 begin*/
+static void  oem_dimming_enable(struct mdss_dsi_ctrl_pdata *ctrl,bool enable)
+{
+	struct dcs_cmd_req cmdreq;
+	struct mdss_panel_info *pinfo;
+
+	pinfo = &(ctrl->panel_data.panel_info);
+	if (pinfo->dcs_cmd_by_left) {
+		if (ctrl->ndx != DSI_CTRL_LEFT)
+			return;
+	}
+
+	pr_debug("%s: lcd dimming enable %d\n", __func__, enable);
+
+	if(enable)
+		led_diming_mode[1] = 0x2c;
+	else
+		led_diming_mode[1] = 0x24;
+
+	memset(&cmdreq, 0, sizeof(cmdreq));
+	cmdreq.cmds = &diming_enable_cmd;
 	cmdreq.cmds_cnt = 1;
 	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
 	cmdreq.rlen = 0;
@@ -210,7 +307,9 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
+/* LAFITE-7866 xingbin 20160415 end >*/
 
+/* LAFITE-5675 xingbin lcd flicker at power on end >*/
 static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
 	int rc = 0;
@@ -263,11 +362,76 @@ disp_en_gpio_err:
 	return rc;
 }
 
+
+#ifdef CONFIG_YL_LCD_VDDI_ENABLE_GPIO
+static int mdss_dsi_request_vddi_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
+{
+	int rc = 0;
+
+	if (gpio_is_valid(ctrl_pdata->disp_vddi_enable_gpio)) {
+		rc = gpio_request(ctrl_pdata->disp_vddi_enable_gpio,
+					"panel_vddi");
+		if (rc) {
+			pr_err("request panel vddi enable gpio failed, rc=%d\n",
+					rc);
+		}
+	}
+	return rc;
+}
+
+int mdss_dsi_panel_vddi_enable(struct mdss_panel_data *pdata, int enable)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct mdss_panel_info *pinfo = NULL;
+	int rc = 0;
+
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+			panel_data);
+
+	pr_debug("%s: enable = %d\n", __func__, enable);
+	pinfo = &(ctrl_pdata->panel_data.panel_info);
+
+	if (enable) {
+		rc = mdss_dsi_request_vddi_gpios(ctrl_pdata);
+		if (rc) {
+			pr_err("%s: gpio request failed\n", __func__);
+			return rc;
+		}
+		if (!pinfo->cont_splash_enabled) {
+			if (gpio_is_valid(ctrl_pdata->disp_vddi_enable_gpio)) {
+				pr_debug("%s:disp_vddi_en_gpio is set to 1.\n",
+						__func__);
+				gpio_direction_output(
+					(ctrl_pdata->disp_vddi_enable_gpio),
+						1);
+			}
+		}
+
+	} else {
+		if (gpio_is_valid(ctrl_pdata->disp_vddi_enable_gpio)) {
+			pr_debug("%s: disp_vddi_enable_gpio is set to 0.\n",
+					__func__);
+			gpio_direction_output(
+				(ctrl_pdata->disp_vddi_enable_gpio), 0);
+			gpio_free(ctrl_pdata->disp_vddi_enable_gpio);
+		}
+	}
+	return rc;
+}
+#endif
+
+
 int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_panel_info *pinfo = NULL;
 	int i, rc = 0, mode_sel = 0;
+	static int gpio_req_success;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -303,8 +467,11 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		rc = mdss_dsi_request_gpios(ctrl_pdata);
 		if (rc) {
 			pr_err("gpio request failed\n");
+			gpio_req_success = 0;
 			return rc;
 		}
+		gpio_req_success = 1;
+
 		if (!pinfo->cont_splash_enabled) {
 			if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
 				rc = gpio_direction_output(
@@ -363,6 +530,16 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			pr_debug("%s: Reset panel done\n", __func__);
 		}
 	} else {
+#ifdef CONFIG_YL_TPS65132
+		if (ili9881_ic_flag) {
+			pr_debug("-tps65132-%s-ili9881-sleep\n", __func__);
+			tps65132_03h_init();
+		}
+#endif
+		if (gpio_req_success) {
+		gpio_set_value((ctrl_pdata->rst_gpio), 0);
+		gpio_free(ctrl_pdata->rst_gpio);
+		usleep(1500);
 		if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
 			gpio_set_value((ctrl_pdata->bklt_en_gpio), 0);
 			gpio_free(ctrl_pdata->bklt_en_gpio);
@@ -371,10 +548,9 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			gpio_set_value((ctrl_pdata->disp_en_gpio), 0);
 			gpio_free(ctrl_pdata->disp_en_gpio);
 		}
-		gpio_set_value((ctrl_pdata->rst_gpio), 0);
-		gpio_free(ctrl_pdata->rst_gpio);
 		if (gpio_is_valid(ctrl_pdata->lcd_mode_sel_gpio))
 			gpio_free(ctrl_pdata->lcd_mode_sel_gpio);
+		}
 	}
 	return 0;
 gpio_err:
@@ -611,13 +787,14 @@ static void mdss_dsi_panel_switch_mode(struct mdss_panel_data *pdata,
 
 	return;
 }
-
+/*<LAFITE-1213 xingbin 20160202 begin */
+/* < LAFITE-4190 xingbin 20160307 begin */
 static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 							u32 bl_level)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_dsi_ctrl_pdata *sctrl = NULL;
-
+	static u32 old_bl_level = 0;
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return;
@@ -631,9 +808,21 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 	 * for the backlight brightness. If the brightness is less
 	 * than it, the controller can malfunction.
 	 */
+	if (bl_level == old_bl_level)
+		return;
 
 	if ((bl_level < pdata->panel_info.bl_min) && (bl_level != 0))
 		bl_level = pdata->panel_info.bl_min;
+
+	if(0==old_bl_level && bl_level > old_bl_level ){
+		lcd_resume_flag = 1;
+		pr_info("%s:bl_level = %d\n",__func__,bl_level);
+		/*< LAFITE-1669 xingbin 20160218 begin */
+		mdelay(40);
+		/*LAFITE-1669 xingbin 20160218 end > */
+	}else{
+		lcd_resume_flag = 0;
+	}
 
 	switch (ctrl_pdata->bklt_ctrl) {
 	case BL_WLED:
@@ -671,14 +860,32 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 			__func__);
 		break;
 	}
+/*< LAFITE-7866 xingbin 20160415 begin*/
+	if(lcd_resume_flag==1){
+		mdelay(30);
+		oem_dimming_enable(ctrl_pdata,true);
+		/*< LAFITE-9176 xingbin 20160426 begin*/
+		if(kernel_level_first==1){
+			if (ctrl_pdata->bklt_ctrl != BL_WLED)
+				led_trigger_event(bl_led_trigger, 4095);
+			kernel_level_first = 0;
+		}
+		/* LAFITE-9176 xingbin 20160426 end >*/
+	}
+/* LAFITE-7866 xingbin 20160415 end >*/
+      old_bl_level = bl_level;
 }
-
+/* LAFITE-4190 xingbin 20160307 end>*/
+/*LAFITE-1213 xingbin 20160202 end >*/
 static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 	struct mdss_panel_info *pinfo;
 	struct dsi_panel_cmds *on_cmds;
 	int ret = 0;
+/*<LAFITE-1213 xingbin 20160202 begin */
+	pr_info("%s:enter\n", __func__);
+/* LAFITE-1213 xingbin 20160202 end > */
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -710,7 +917,9 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	if (ctrl->ds_registered)
 		mdss_dba_utils_video_on(pinfo->dba_data, pinfo);
 end:
-	pr_debug("%s:-\n", __func__);
+/*<LAFITE-1213 xingbin 20160202 begin */
+	pr_info("%s:exit\n", __func__);
+/* LAFITE-1213 xingbin 20160202 end > */
 	return ret;
 }
 
@@ -762,6 +971,9 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 	struct mdss_panel_info *pinfo;
+/*<LAFITE-1213 xingbin 20160202 begin */
+	pr_info("%s:enter\n", __func__);
+/* LAFITE-1213 xingbin 20160202 end > */
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -788,7 +1000,9 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	}
 
 end:
-	pr_debug("%s:-\n", __func__);
+/*<LAFITE-1213 xingbin 20160202 begin */
+	pr_info("%s:exit\n", __func__);
+/* LAFITE-1213 xingbin 20160202 end > */
 	return 0;
 }
 
@@ -1842,6 +2056,12 @@ int mdss_panel_parse_bl_settings(struct device_node *np,
 								 __func__);
 			}
 		} else if (!strcmp(data, "bl_ctrl_dcs")) {
+/*<LAFITE-1144 xingbin 20160201 begin */
+			led_trigger_register_simple("bkl-trigger",
+				&bl_led_trigger);
+			pr_debug("%s: SUCCESS-> WLED TRIGGER register\n",
+				__func__);
+/*LAFITE-1144 xingbin 20160201 end >*/
 			ctrl_pdata->bklt_ctrl = BL_DCS_CMD;
 			pr_debug("%s: Configured DCS_CMD bklt ctrl\n",
 								__func__);
@@ -1852,8 +2072,10 @@ int mdss_panel_parse_bl_settings(struct device_node *np,
 
 void mdss_dsi_unregister_bl_settings(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
-	if (ctrl_pdata->bklt_ctrl == BL_WLED)
+/*<LAFITE-1144 xingbin 20160201 begin */
+	if (ctrl_pdata->bklt_ctrl == BL_WLED||ctrl_pdata->bklt_ctrl == BL_DCS_CMD)
 		led_trigger_unregister_simple(bl_led_trigger);
+/*LAFITE-1144 xingbin 20160201 end >*/
 }
 
 static int mdss_panel_parse_dt(struct device_node *np,
@@ -1879,6 +2101,11 @@ static int mdss_panel_parse_dt(struct device_node *np,
 		return -EINVAL;
 	}
 	pinfo->yres = (!rc ? tmp : 480);
+/*<LAFITE-4190 xingbin 20160307 begin*/
+	rc = of_property_read_u32(np,
+		"qcom,mdss-dsi-panel-supply", &tmp);
+	pinfo->panel_supply_order = (!rc ? tmp : 0);
+/*LAFITE-4190 xingbin 20160307 end>*/
 
 	rc = of_property_read_u32(np,
 		"qcom,mdss-pan-physical-width-dimension", &tmp);
@@ -2127,6 +2354,11 @@ static int mdss_panel_parse_dt(struct device_node *np,
 		goto error;
 	}
 
+#ifdef CONFIG_YL_TPS65132
+	ili9881_ic_flag = of_property_read_bool(np,
+			"qcom,mdss-ili9881-ic-flag");
+#endif
+
 	mdss_dsi_parse_panel_horizintal_line_idle(np, ctrl_pdata);
 
 	mdss_dsi_parse_dfps_config(np, ctrl_pdata);
@@ -2188,9 +2420,16 @@ int mdss_dsi_panel_init(struct device_node *node,
 		pr_info("%s:%d, Panel name not specified\n",
 						__func__, __LINE__);
 	} else {
+		get_panel_name(panel_name);
 		pr_info("%s: Panel Name = %s\n", __func__, panel_name);
 		strlcpy(&pinfo->panel_name[0], panel_name, MDSS_MAX_PANEL_LEN);
 	}
+/*< LAFITE-222 xingbin 20151217 begin */
+#if defined(CONFIG_GET_HARDWARE_INFO)
+	strlcpy(tmp_panel_name, panel_name,100);
+	register_hardware_info(LCM, tmp_panel_name);
+#endif
+/* LAFITE-222 xingbin 20151217 end >*/
 	rc = mdss_panel_parse_dt(node, ctrl_pdata);
 	if (rc) {
 		pr_err("%s:%d panel dt parse failed\n", __func__, __LINE__);

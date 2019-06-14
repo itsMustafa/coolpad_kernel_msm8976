@@ -14,9 +14,9 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-
-int msm_show_resume_irq_mask;
-
+/*<LAFITE-733 caixiaoguang 20160120 begin*/
+int msm_show_resume_irq_mask=1;
+/*LAFITE-733 caixiaoguang 20160120 end>*/
 module_param_named(
 	debug_mask, msm_show_resume_irq_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
 );

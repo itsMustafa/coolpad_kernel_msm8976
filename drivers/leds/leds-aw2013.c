@@ -47,9 +47,13 @@
 #define AW2013_VI2C_MAX_UV		1800000
 
 #define MAX_RISE_TIME_MS		7
-#define MAX_HOLD_TIME_MS		5
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+#define MAX_HOLD_TIME_MS		7
+/* LAFITE-370 yanzhiyao 20160104 end > */
 #define MAX_FALL_TIME_MS		7
-#define MAX_OFF_TIME_MS			5
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+#define MAX_OFF_TIME_MS			7
+/* LAFITE-370 yanzhiyao 20160104 end > */
 
 struct aw2013_led {
 	struct i2c_client *client;
@@ -63,10 +67,40 @@ struct aw2013_led {
 	int id;
 	bool poweron;
 };
+/* < LAFITE-1500 yanzhiyao 20160215 begin */
+struct aw2013_led *g_led;
+/* < LAFITE-2439 lichuangchuang 20160225 begin */
+int aw2013_sleep_led = 0;
+/* LAFITE-2439 lichuangchuang 20160225 end > */
+EXPORT_SYMBOL(aw2013_sleep_led);
+int aw2013_usb_state = 0;
+EXPORT_SYMBOL(aw2013_usb_state);
+/* LAFITE-1500 yanzhiyao 20160215 end > */
+/* < LAFITE-3222 yanzhiyao 20160301 begin */
+/* < LAFITE-3222 yanzhiyao 20160229 begin */
+//static int g_blinking = 0;
+/* LAFITE-3222 yanzhiyao 20160229 end > */
+/* LAFITE-3222 yanzhiyao 20160301 end > */
+/* < LAFITE-6306 yanzhiyao 20160328 begin */
+bool userspace_led_ctl= 0;
+bool aw2013_flag = 0;
+/* LAFITE-6306 yanzhiyao 20160328 end > */
+/*yulong add for showing green led in ftm mode 20160421*/
+extern int yl_get_ftm(void);
+/*yulong add end*/
 
 static int aw2013_write(struct aw2013_led *led, u8 reg, u8 val)
 {
-	return i2c_smbus_write_byte_data(led->client, reg, val);
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+	int i = 0;
+	i = i2c_smbus_write_byte_data(led->client, reg, val);
+	if(i<0)
+	{
+		printk("aw2013 LED write i2c error\n");
+	}
+	//return i2c_smbus_write_byte_data(led->client, reg, val);
+	return i;
+/* LAFITE-370 yanzhiyao 20160104 end > */
 }
 
 static int aw2013_read(struct aw2013_led *led, u8 reg, u8 *val)
@@ -75,7 +109,12 @@ static int aw2013_read(struct aw2013_led *led, u8 reg, u8 *val)
 
 	ret = i2c_smbus_read_byte_data(led->client, reg);
 	if (ret < 0)
+	/* < LAFITE-370 yanzhiyao 20160104 begin */
+	{
+		printk("aw2013 LED read I2C err\n");
 		return ret;
+	}
+	/* LAFITE-370 yanzhiyao 20160104 end > */
 
 	*val = ret;
 	return 0;
@@ -93,12 +132,16 @@ static int aw2013_power_on(struct aw2013_led *led, bool on)
 			return rc;
 		}
 
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+#if 0
 		rc = regulator_enable(led->vcc);
 		if (rc) {
 			dev_err(&led->client->dev,
 				"Regulator vcc enable failed rc=%d\n", rc);
 			goto fail_enable_reg;
 		}
+#endif
+/* LAFITE-370 yanzhiyao 20160104 end > */
 		led->poweron = true;
 	} else {
 		rc = regulator_disable(led->vdd);
@@ -108,14 +151,20 @@ static int aw2013_power_on(struct aw2013_led *led, bool on)
 			return rc;
 		}
 
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+#if 0
 		rc = regulator_disable(led->vcc);
 		if (rc) {
 			dev_err(&led->client->dev,
 				"Regulator vcc disable failed rc=%d\n", rc);
 			goto fail_disable_reg;
 		}
+#endif
+/* LAFITE-370 yanzhiyao 20160104 end > */
 		led->poweron = false;
 	}
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+#if 0
 	return rc;
 
 fail_enable_reg:
@@ -132,6 +181,8 @@ fail_disable_reg:
 		dev_err(&led->client->dev,
 			"Regulator vdd enable failed rc=%d\n", rc);
 
+#endif
+/* LAFITE-370 yanzhiyao 20160104 end > */
 	return rc;
 }
 
@@ -159,6 +210,8 @@ static int aw2013_power_init(struct aw2013_led *led, bool on)
 			}
 		}
 
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+#if 0
 		led->vcc = regulator_get(&led->client->dev, "vcc");
 		if (IS_ERR(led->vcc)) {
 			rc = PTR_ERR(led->vcc);
@@ -176,24 +229,34 @@ static int aw2013_power_init(struct aw2013_led *led, bool on)
 				goto reg_vcc_put;
 			}
 		}
+#endif
+/* LAFITE-370 yanzhiyao 20160104 end > */
 	} else {
 		if (regulator_count_voltages(led->vdd) > 0)
 			regulator_set_voltage(led->vdd, 0, AW2013_VDD_MAX_UV);
 
 		regulator_put(led->vdd);
 
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+#if 0
 		if (regulator_count_voltages(led->vcc) > 0)
 			regulator_set_voltage(led->vcc, 0, AW2013_VI2C_MAX_UV);
 
 		regulator_put(led->vcc);
+#endif
+/* LAFITE-370 yanzhiyao 20160104 end > */
 	}
 	return 0;
 
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+#if 0
 reg_vcc_put:
 	regulator_put(led->vcc);
 reg_vdd_set_vtg:
 	if (regulator_count_voltages(led->vdd) > 0)
 		regulator_set_voltage(led->vdd, 0, AW2013_VDD_MAX_UV);
+#endif
+/* LAFITE-370 yanzhiyao 20160104 end > */
 reg_vdd_put:
 	regulator_put(led->vdd);
 	return rc;
@@ -219,6 +282,12 @@ static void aw2013_brightness_work(struct work_struct *work)
 	if (led->cdev.brightness > 0) {
 		if (led->cdev.brightness > led->cdev.max_brightness)
 			led->cdev.brightness = led->cdev.max_brightness;
+		/* < FERRARI-705 > yulong modify for RGB ratio 20160524 begin*/
+		if (led->cdev.brightness == 153)
+			led->cdev.brightness = 180;
+		if (led->cdev.brightness == 204)
+			led->cdev.brightness = 255;
+		/*< FERRARI-705 > yulong modify for RGB ratio 20160524 end*/
 		aw2013_write(led, AW_REG_GLOBAL_CONTROL,
 			AW_LED_MOUDLE_ENABLE_MASK);
 		aw2013_write(led, AW_REG_LED_CONFIG_BASE + led->id,
@@ -227,9 +296,15 @@ static void aw2013_brightness_work(struct work_struct *work)
 			led->cdev.brightness);
 		aw2013_read(led, AW_REG_LED_ENABLE, &val);
 		aw2013_write(led, AW_REG_LED_ENABLE, val | (1 << led->id));
+		/* < LAFITE-370 yanzhiyao 20160104 begin */
+		printk("aw2013 %s LED brightness=%d,current=%d\n",led->cdev.name,led->cdev.brightness,led->pdata->max_current);
+		/* LAFITE-370 yanzhiyao 20160104 end > */
 	} else {
 		aw2013_read(led, AW_REG_LED_ENABLE, &val);
 		aw2013_write(led, AW_REG_LED_ENABLE, val & (~(1 << led->id)));
+		/* < LAFITE-370 yanzhiyao 20160104 begin */
+		printk("aw2013 %s LED close\n",led->cdev.name);
+		/* LAFITE-370 yanzhiyao 20160104 end > */
 	}
 
 	aw2013_read(led, AW_REG_LED_ENABLE, &val);
@@ -279,9 +354,15 @@ static void aw2013_led_blink_set(struct aw2013_led *led, unsigned long blinking)
 			led->pdata->off_time_ms);
 		aw2013_read(led, AW_REG_LED_ENABLE, &val);
 		aw2013_write(led, AW_REG_LED_ENABLE, val | (1 << led->id));
+		/* < LAFITE-370 yanzhiyao 20160104 begin */
+		printk("aw2013 %s LED set off_time=%d blink\n",led->cdev.name,led->pdata->off_time_ms);
+		/* LAFITE-370 yanzhiyao 20160104 end > */
 	} else {
 		aw2013_read(led, AW_REG_LED_ENABLE, &val);
 		aw2013_write(led, AW_REG_LED_ENABLE, val & (~(1 << led->id)));
+		/* < LAFITE-370 yanzhiyao 20160104 begin */
+		printk("aw2013 %s LED close\n",led->cdev.name);
+		/* LAFITE-370 yanzhiyao 20160104 end > */
 	}
 
 	aw2013_read(led, AW_REG_LED_ENABLE, &val);
@@ -303,7 +384,9 @@ static void aw2013_set_brightness(struct led_classdev *cdev,
 {
 	struct aw2013_led *led = container_of(cdev, struct aw2013_led, cdev);
 	led->cdev.brightness = brightness;
-
+	/* < LAFITE-6306 yanzhiyao 20160328 begin */
+	userspace_led_ctl = 1;
+	/* LAFITE-6306 yanzhiyao 20160328 end > */
 	schedule_work(&led->brightness_work);
 }
 
@@ -320,6 +403,11 @@ static ssize_t aw2013_store_blink(struct device *dev,
 	ret = kstrtoul(buf, 10, &blinking);
 	if (ret)
 		return ret;
+	/* < LAFITE-3222 yanzhiyao 20160301 begin */
+	/* < LAFITE-3222 yanzhiyao 20160229 begin */
+	//g_blinking = blinking;
+	/* LAFITE-3222 yanzhiyao 20160229 end > */
+	/* LAFITE-3222 yanzhiyao 20160301 end > */
 	mutex_lock(&led->pdata->led->lock);
 	aw2013_led_blink_set(led, blinking);
 	mutex_unlock(&led->pdata->led->lock);
@@ -365,9 +453,10 @@ static ssize_t aw2013_led_time_store(struct device *dev,
 	mutex_unlock(&led->pdata->led->lock);
 	return len;
 }
-
-static DEVICE_ATTR(blink, 0664, NULL, aw2013_store_blink);
-static DEVICE_ATTR(led_time, 0664, aw2013_led_time_show, aw2013_led_time_store);
+/* < LAFITE-1500 yanzhiyao 20160215 begin */
+static DEVICE_ATTR(blink, 0666, NULL, aw2013_store_blink);
+static DEVICE_ATTR(led_time, 0666, aw2013_led_time_show, aw2013_led_time_store);
+/* LAFITE-1500 yanzhiyao 20160215 end > */
 
 static struct attribute *aw2013_led_attributes[] = {
 	&dev_attr_blink.attr,
@@ -382,14 +471,29 @@ static struct attribute_group aw2013_led_attr_group = {
 static int aw_2013_check_chipid(struct aw2013_led *led)
 {
 	u8 val;
-
-	aw2013_write(led, AW_REG_RESET, AW_LED_RESET_MASK);
-	usleep(AW_LED_RESET_DELAY);
+	/* < LAFITE-6306 yanzhiyao 20160328 begin */
 	aw2013_read(led, AW_REG_RESET, &val);
 	if (val == AW2013_CHIPID)
 		return 0;
 	else
+	{
+		aw2013_write(led, AW_REG_RESET, AW_LED_RESET_MASK);
+		usleep(AW_LED_RESET_DELAY);
+		aw2013_read(led, AW_REG_RESET, &val);
+		if (val == AW2013_CHIPID)
+			return 0;
+		else
+			return -EINVAL;
+	}
+	/* LAFITE-6306 yanzhiyao 20160328 end > */
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+#if 0
+	if (val == AW2013_CHIPID)
+		return 0;
+	else
 		return -EINVAL;
+#endif
+/* LAFITE-370 yanzhiyao 20160104 end > */
 }
 
 static int aw2013_led_err_handle(struct aw2013_led *led_array,
@@ -540,13 +644,46 @@ free_err:
 	return rc;
 }
 
+/* < LAFITE-1500 yanzhiyao 20160215 begin */
+/*led_num:red-0,green-1,blue-3*
+  brightness:0-255*/
+void aw2013_set_RGB_led_brightness(int led_num,int brightness)
+{
+	u8 val;
+    if (brightness > 0) {
+		if (brightness > 255)
+			brightness = 255;
+		aw2013_write(g_led, AW_REG_GLOBAL_CONTROL,
+			AW_LED_MOUDLE_ENABLE_MASK);
+		aw2013_write(g_led, AW_REG_LED_CONFIG_BASE + led_num,
+			1);
+		aw2013_write(g_led, AW_REG_LED_BRIGHTNESS_BASE + led_num,
+			brightness);
+		aw2013_read(g_led, AW_REG_LED_ENABLE, &val);
+		aw2013_write(g_led, AW_REG_LED_ENABLE, val | (1 << led_num));
+		/* < LAFITE-3190 yanzhiyao 20160229 begin */
+		pr_debug("aw2013 %d LED brightness=%d\n",led_num,brightness);
+		/* LAFITE-3190 yanzhiyao 20160229 end > */
+	} else {
+		aw2013_read(g_led, AW_REG_LED_ENABLE, &val);
+		aw2013_write(g_led, AW_REG_LED_ENABLE, val & (~(1 << led_num)));
+		/* < LAFITE-3190 yanzhiyao 20160229 begin */
+		pr_debug("aw2013 %d LED close\n",led_num);
+		/* LAFITE-3190 yanzhiyao 20160229 end > */
+	}
+}
+EXPORT_SYMBOL(aw2013_set_RGB_led_brightness);
+/* LAFITE-1500 yanzhiyao 20160215 end > */
+
 static int aw2013_led_probe(struct i2c_client *client,
 			   const struct i2c_device_id *id)
 {
 	struct aw2013_led *led_array;
 	struct device_node *node;
 	int ret, num_leds = 0;
-
+	/* < LAFITE-370 yanzhiyao 20160104 begin */
+	printk("aw2013 led begin\n");
+	/* LAFITE-370 yanzhiyao 20160104 end > */
 	node = client->dev.of_node;
 	if (node == NULL)
 		return -EINVAL;
@@ -562,6 +699,9 @@ static int aw2013_led_probe(struct i2c_client *client,
 		dev_err(&client->dev, "Unable to allocate memory\n");
 		return -ENOMEM;
 	}
+	/* < LAFITE-1500 yanzhiyao 20160215 begin */
+	g_led = led_array;
+	/* LAFITE-1500 yanzhiyao 20160215 end > */
 	led_array->client = client;
 	led_array->num_leds = num_leds;
 
@@ -569,14 +709,21 @@ static int aw2013_led_probe(struct i2c_client *client,
 
 	ret = aw_2013_check_chipid(led_array);
 	if (ret) {
-		dev_err(&client->dev, "Check chip id error\n");
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+		//dev_err(&client->dev, "Check chip id error\n");
+		printk("check chip id error\n");
+/* LAFITE-370 yanzhiyao 20160104 end > */
 		goto free_led_arry;
 	}
 
 	ret = aw2013_led_parse_child_node(led_array, node);
 	if (ret) {
 		dev_err(&client->dev, "parsed node error\n");
+/* < LAFITE-370 yanzhiyao 20160104 begin */
+#if 0
 		goto free_led_arry;
+#endif
+/* LAFITE-370 yanzhiyao 20160104 end > */
 	}
 
 	i2c_set_clientdata(client, led_array);
@@ -586,7 +733,12 @@ static int aw2013_led_probe(struct i2c_client *client,
 		dev_err(&client->dev, "power init failed");
 		goto fail_parsed_node;
 	}
-
+/*yulong add for showing green led in ftm mode 20160421*/
+	if (1 == yl_get_ftm()) {
+		pr_info("%s: ftm mode\n", __func__);
+		aw2013_set_RGB_led_brightness(1, 255);
+	}
+	aw2013_flag = 1;
 	return 0;
 
 fail_parsed_node:
@@ -616,6 +768,34 @@ static int aw2013_led_remove(struct i2c_client *client)
 	led_array = NULL;
 	return 0;
 }
+/* < LAFITE-1500 yanzhiyao 20160215 begin */
+static int aw2013_suspend(struct device *dev)
+{
+	/* < LAFITE-3222 yanzhiyao 20160301 begin */
+	struct aw2013_led *led_array = i2c_get_clientdata(g_led->client);
+	/* LAFITE-3222 yanzhiyao 20160301 end > */
+	if(aw2013_sleep_led)
+	{
+		aw2013_set_RGB_led_brightness(1,0);
+	}
+	/* < LAFITE-3222 yanzhiyao 20160301 begin */
+	/* < LAFITE-3222 yanzhiyao 20160229 begin */
+	//if(g_blinking == 0)
+	if((led_array[0].cdev.brightness || led_array[1].cdev.brightness||led_array[2].cdev.brightness) == 0)
+	{
+		aw2013_write(g_led, AW_REG_RESET, AW_LED_RESET_MASK);
+	}
+	/* LAFITE-3222 yanzhiyao 20160229 end > */
+	/* LAFITE-3222 yanzhiyao 20160301 end > */
+    return 0;
+}
+
+static const struct dev_pm_ops aw2013_pm_ops = {
+    .suspend        = aw2013_suspend,
+//  .suspend_noirq  = aw2013_suspend_noirq,
+//  .resume         = aw2013_resume,
+};
+/* LAFITE-1500 yanzhiyao 20160215 end > */
 
 static const struct i2c_device_id aw2013_led_id[] = {
 	{"aw2013_led", 0},
@@ -636,6 +816,9 @@ static struct i2c_driver aw2013_led_driver = {
 		.name = "aw2013_led",
 		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(aw2013_match_table),
+		/* < LAFITE-1500 yanzhiyao 20160215 begin */
+		.pm = &aw2013_pm_ops,
+		/* LAFITE-1500 yanzhiyao 20160215 end > */
 	},
 	.id_table = aw2013_led_id,
 };
@@ -644,13 +827,17 @@ static int __init aw2013_led_init(void)
 {
 	return i2c_add_driver(&aw2013_led_driver);
 }
-module_init(aw2013_led_init);
+/*module_init(aw2013_led_init);*/
+fs_initcall(aw2013_led_init);
 
 static void __exit aw2013_led_exit(void)
 {
 	i2c_del_driver(&aw2013_led_driver);
 }
 module_exit(aw2013_led_exit);
-
+/* < LAFITE-1500 yanzhiyao 20160215 begin */
+module_param(aw2013_sleep_led, int, 0664);
+MODULE_PARM_DESC(aw2013_sleep_led, "An visible int under sysfs");
+/* LAFITE-1500 yanzhiyao 20160215 end > */
 MODULE_DESCRIPTION("AWINIC aw2013 LED driver");
 MODULE_LICENSE("GPL v2");

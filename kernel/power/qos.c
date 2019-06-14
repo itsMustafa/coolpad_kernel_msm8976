@@ -107,12 +107,120 @@ static struct pm_qos_object network_throughput_pm_qos = {
 	.name = "network_throughput",
 };
 
+#ifdef CONFIG_APP_PROFILE
+static BLOCKING_NOTIFIER_HEAD(min_online_cpus_notifier);
+static struct pm_qos_constraints min_online_cpus_constraints = {
+	.list = PLIST_HEAD_INIT(min_online_cpus_constraints.list),
+	.target_value = PM_QOS_MIN_ONLINE_CPUS_DEFAULT_VALUE,
+	.default_value = PM_QOS_MIN_ONLINE_CPUS_DEFAULT_VALUE,
+	.type = PM_QOS_MAX,
+	.notifiers = &min_online_cpus_notifier,
+};
+static struct pm_qos_object min_online_cpus_pm_qos = {
+	.constraints = &min_online_cpus_constraints,
+	.name = "min_online_cpus",
+};
+
+
+static BLOCKING_NOTIFIER_HEAD(max_online_cpus_notifier);
+static struct pm_qos_constraints max_online_cpus_constraints = {
+	.list = PLIST_HEAD_INIT(max_online_cpus_constraints.list),
+	.target_value = PM_QOS_MAX_ONLINE_CPUS_DEFAULT_VALUE,
+	.default_value = PM_QOS_MAX_ONLINE_CPUS_DEFAULT_VALUE,
+	.type = PM_QOS_MIN,
+	.notifiers = &max_online_cpus_notifier,
+};
+static struct pm_qos_object max_online_cpus_pm_qos = {
+	.constraints = &max_online_cpus_constraints,
+	.name = "max_online_cpus",
+
+};
+
+
+static BLOCKING_NOTIFIER_HEAD(cpu_freq_min_notifier);
+static struct pm_qos_constraints cpu_freq_min_constraints = {
+	.list = PLIST_HEAD_INIT(cpu_freq_min_constraints.list),
+	.target_value = PM_QOS_CPU_FREQ_MIN_DEFAULT_VALUE,
+	.default_value = PM_QOS_CPU_FREQ_MIN_DEFAULT_VALUE,
+	.type = PM_QOS_MAX,
+	.notifiers = &cpu_freq_min_notifier,
+};
+static struct pm_qos_object cpu_freq_min_pm_qos = {
+	.constraints = &cpu_freq_min_constraints,
+	.name = "cpu_freq_min",
+};
+
+
+static BLOCKING_NOTIFIER_HEAD(cpu_freq_max_notifier);
+static struct pm_qos_constraints cpu_freq_max_constraints = {
+	.list = PLIST_HEAD_INIT(cpu_freq_max_constraints.list),
+	.target_value = PM_QOS_CPU_FREQ_MAX_DEFAULT_VALUE,
+	.default_value = PM_QOS_CPU_FREQ_MAX_DEFAULT_VALUE,
+	.type = PM_QOS_MIN,
+	.notifiers = &cpu_freq_max_notifier,
+};
+static struct pm_qos_object cpu_freq_max_pm_qos = {
+	.constraints = &cpu_freq_max_constraints,
+	.name = "cpu_freq_max",
+};
+
+//cuizhouhua added for start app performance priority,set 1 to force /dev/cpu_freq_min can bigger than /dev/cpu_freq_max
+static BLOCKING_NOTIFIER_HEAD(app_start_pri_notifier);
+static struct pm_qos_constraints app_start_pri_constraints = {
+	.list = PLIST_HEAD_INIT(app_start_pri_constraints.list),
+	.target_value = PM_QOS_APP_START_PRI_DEFAULT_VALUE,
+	.default_value = PM_QOS_APP_START_PRI_DEFAULT_VALUE,
+	.type = PM_QOS_MAX,
+	.notifiers = &app_start_pri_notifier,
+};
+static struct pm_qos_object app_start_pri_pm_qos = {
+	.constraints = &app_start_pri_constraints,
+	.name = "app_start_pri",
+};
+static BLOCKING_NOTIFIER_HEAD(gpu_freq_min_notifier);
+static struct pm_qos_constraints gpu_freq_min_constraints = {
+	.list = PLIST_HEAD_INIT(gpu_freq_min_constraints.list),
+	.target_value = PM_QOS_GPU_FREQ_MIN_DEFAULT_VALUE,
+	.default_value = PM_QOS_GPU_FREQ_MIN_DEFAULT_VALUE,
+	.type = PM_QOS_MAX,
+	.notifiers = &gpu_freq_min_notifier,
+};
+static struct pm_qos_object gpu_freq_min_pm_qos = {
+	.constraints = &gpu_freq_min_constraints,
+	.name = "gpu_freq_min",
+};
+
+
+static BLOCKING_NOTIFIER_HEAD(gpu_freq_max_notifier);
+static struct pm_qos_constraints gpu_freq_max_constraints = {
+	.list = PLIST_HEAD_INIT(gpu_freq_max_constraints.list),
+	.target_value = PM_QOS_GPU_FREQ_MAX_DEFAULT_VALUE,
+	.default_value = PM_QOS_GPU_FREQ_MAX_DEFAULT_VALUE,
+	.type = PM_QOS_MIN,
+	.notifiers = &gpu_freq_max_notifier,
+};
+static struct pm_qos_object gpu_freq_max_pm_qos = {
+	.constraints = &gpu_freq_max_constraints,
+	.name = "gpu_freq_max",
+};
+
+#endif
 
 static struct pm_qos_object *pm_qos_array[] = {
 	&null_pm_qos,
 	&cpu_dma_pm_qos,
 	&network_lat_pm_qos,
-	&network_throughput_pm_qos
+	&network_throughput_pm_qos,
+#ifdef CONFIG_APP_PROFILE
+	&min_online_cpus_pm_qos,
+	&max_online_cpus_pm_qos,
+	&cpu_freq_min_pm_qos,
+	&cpu_freq_max_pm_qos,
+	&gpu_freq_min_pm_qos,
+	&gpu_freq_max_pm_qos,
+	/* added for start app priority */
+	&app_start_pri_pm_qos
+#endif
 };
 
 static ssize_t pm_qos_power_write(struct file *filp, const char __user *buf,
@@ -582,6 +690,18 @@ void pm_qos_remove_request(struct pm_qos_request *req)
 	}
 
 	cancel_delayed_work_sync(&req->work);
+
+/*< LAFITE-1965 chaofubang 2016-03-08 begin */
+#ifdef CONFIG_SMP
+	if (req->type == PM_QOS_REQ_AFFINE_IRQ) {
+		int ret = 0;
+		/* Get the current affinity */
+		ret = irq_release_affinity_notifier(&req->irq_notify);
+		if (ret)
+			WARN(1, "IRQ affinity notify set failed\n");
+	}
+#endif
+/* LAFITE-1965 chaofubang 2016-03-08 end >*/
 
 	pm_qos_update_target(pm_qos_array[req->pm_qos_class]->constraints,
 			     req, PM_QOS_REMOVE_REQ,

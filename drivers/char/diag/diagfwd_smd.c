@@ -417,6 +417,7 @@ static void diag_smd_queue_read(void *ctxt)
 		queue_work(smd_info->wq, &(smd_info->read_work));
 	}
 }
+/*< LAFITE-2336 wanghao 20160225 begin */
 int diag_smd_check_state(void *ctxt)
 {
 	struct diag_smd_info *info = NULL;
@@ -427,6 +428,7 @@ int diag_smd_check_state(void *ctxt)
 	info = (struct diag_smd_info *)ctxt;
 	return (int)(atomic_read(&info->diag_state));
 }
+/* LAFITE-2336 wanghao 20160225 end >*/
 void diag_smd_invalidate(void *ctxt, struct diagfwd_info *fwd_ctxt)
 {
 	struct diag_smd_info *smd_info = NULL;

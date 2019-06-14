@@ -88,4 +88,7 @@ obj-$(CONFIG_GPIO_WM8350)	+= gpio-wm8350.o
 obj-$(CONFIG_GPIO_WM8994)	+= gpio-wm8994.o
 obj-$(CONFIG_GPIO_XILINX)	+= gpio-xilinx.o
 obj-$(CONFIG_MSM_SMP2P)		+= gpio-msm-smp2p.o
+#< LAFITE-363 guohongtao 20160104 begin>
+obj-$(CONFIG_INFRARED_MAXQ656)		+= maxq656/
+#< LAFITE-363 guohongtao 20160104 end>
 obj-$(CONFIG_MSM_SMP2P_TEST)	+= gpio-msm-smp2p-test.o

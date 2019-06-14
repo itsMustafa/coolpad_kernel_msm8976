@@ -30,7 +30,13 @@
 
 #define MAX_NUM_IRQS 14
 #define NUM_IRQ_REGS 2
-#define WCD9XXX_SYSTEM_RESUME_TIMEOUT_MS 700
+#ifdef S2_AUDIO_FEATURE
+/* < LAFITE-1559 chaofubang 20160217 begin */
+#define WCD9XXX_SYSTEM_RESUME_TIMEOUT_MS 1500
+/* LAFITE-1559 chaofubang 20160217 end >*/
+#else
+#define WCD9XXX_SYSTEM_RESUME_TIMEOUT_MS 1500
+#endif //chenshuyun add
 
 #define BYTE_BIT_MASK(nr) (1UL << ((nr) % BITS_PER_BYTE))
 #define BIT_BYTE(nr) ((nr) / BITS_PER_BYTE)

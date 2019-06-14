@@ -31,6 +31,7 @@
 #include <linux/usb/composite.h>
 #include <linux/usb/gadget.h>
 #include <linux/usb/android.h>
+#include <linux/yl_params.h>
 
 #include <linux/qcom/diag_dload.h>
 
@@ -81,6 +82,12 @@
 #include "f_ncm.c"
 #include "f_charger.c"
 #include "debug.h"
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+#include <linux/usb_notify.h>
+static int diags=0;
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 
 MODULE_AUTHOR("Mike Lockwood");
 MODULE_DESCRIPTION("Android Composite USB Driver");
@@ -88,7 +95,9 @@ MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0");
 
 static const char longname[] = "Gadget Android";
-
+/* < LAFITE-6090 yanzhiyao 20160331 begin */
+extern bool usb_enumeration_failed;
+/* LAFITE-6090 yanzhiyao 20160331 end > */
 /* Default vendor and product IDs, overridden by userspace */
 #define VENDOR_ID		0x18D1
 #define PRODUCT_ID		0x0001
@@ -198,6 +207,11 @@ struct android_dev {
 	bool sw_connected;
 	bool suspended;
 	bool sw_suspended;
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+	bool open_diag;
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 	char pm_qos[5];
 	struct pm_qos_request pm_qos_req_dma;
 	unsigned up_pm_qos_sample_sec;
@@ -249,6 +263,8 @@ static int usb_diag_update_pid_and_serial_num(uint32_t pid, const char *snum);
 static char manufacturer_string[256];
 static char product_string[256];
 static char serial_string[256];
+
+static struct wake_lock wlock;
 
 /* String Table */
 static struct usb_string strings_dev[] = {
@@ -309,10 +325,33 @@ static void android_pm_qos_update_latency(struct android_dev *dev, s32 latency)
 		return;
 
 	pr_debug("%s: latency updated to: %d\n", __func__, latency);
-
-	pm_qos_update_request(&dev->pm_qos_req_dma, latency);
-
-	last_vote = latency;
+	/*< LAFITE-1965 chaofubang 2016-03-08 begin */
+	if (latency == PM_QOS_DEFAULT_VALUE) {
+		pm_qos_update_request(&dev->pm_qos_req_dma, latency);
+		last_vote = latency;
+		pm_qos_remove_request(&dev->pm_qos_req_dma);
+	} else {
+		if (!pm_qos_request_active(&dev->pm_qos_req_dma)) {
+			/*
+			 * The default request type PM_QOS_REQ_ALL_CORES is
+			 * applicable to all CPU cores that are online and
+			 * would have a power impact when there are more
+			 * number of CPUs. PM_QOS_REQ_AFFINE_IRQ request
+			 * type shall update/apply the vote only to that CPU to
+			 * which IRQ's affinity is set to.
+			 */
+#ifdef CONFIG_SMP
+			dev->pm_qos_req_dma.type = PM_QOS_REQ_AFFINE_IRQ;
+			dev->pm_qos_req_dma.irq =
+				dev->cdev->gadget->interrupt_num;
+#endif
+			pm_qos_add_request(&dev->pm_qos_req_dma,
+				PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
+		}
+		pm_qos_update_request(&dev->pm_qos_req_dma, latency);
+		last_vote = latency;
+	}
+	/* LAFITE-1965 chaofubang 2016-03-08 end >*/
 }
 
 #define DOWN_PM_QOS_SAMPLE_SEC		5
@@ -395,7 +434,31 @@ enum android_device_state {
 	USB_SUSPENDED,
 	USB_RESUMED
 };
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+struct android_dev *g_android_dev;
+static int usb_ms_notifier(struct notifier_block *self,
+	unsigned long action, void *data);
+static struct notifier_block usb_ms_notif = {
+	.notifier_call = 	usb_ms_notifier,
+};
 
+static int usb_ms_notifier(struct notifier_block *self,
+	unsigned long action, void *data)
+{
+	switch (action) {
+	case USB_MS_DEVICE_ADD:
+		break;
+	case USB_MS_DEVICE_REMOVE:
+		g_android_dev->open_diag=true;
+		schedule_work(&g_android_dev->work);
+		break;
+	}
+	diags=1;
+	return NOTIFY_OK;
+}
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 static void android_work(struct work_struct *data)
 {
 	struct android_dev *dev = container_of(data, struct android_dev, work);
@@ -406,11 +469,18 @@ static void android_work(struct work_struct *data)
 	char *configured[2]   = { "USB_STATE=CONFIGURED", NULL };
 	char *suspended[2]   = { "USB_STATE=SUSPENDED", NULL };
 	char *resumed[2]   = { "USB_STATE=RESUMED", NULL };
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+	char *open_diag[2]   = { "USB_STATE=OPEN_DIAG", NULL };
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 	char **uevent_envp = NULL;
 	static enum android_device_state last_uevent, next_state;
 	unsigned long flags;
 	int pm_qos_vote = -1;
-
+	/* < LAFITE-6090 yanzhiyao 20160331 begin */
+	usb_enumeration_failed = 0;
+	/* LAFITE-6090 yanzhiyao 20160331 end > */
 	spin_lock_irqsave(&cdev->lock, flags);
 	if (dev->suspended != dev->sw_suspended && cdev->config) {
 		if (strncmp(dev->pm_qos, "low", 3))
@@ -460,6 +530,16 @@ static void android_work(struct work_struct *data)
 								disconnected);
 			msleep(20);
 		}
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+		if (dev->open_diag) {
+			dev->open_diag=false;
+			printk("send USB_STATE=OPEN_DIAG:\n");
+			kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
+					open_diag);
+		}
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 		/*
 		 * Before sending out CONFIGURED uevent give function drivers
 		 * a chance to wakeup userspace threads and notify disconnect
@@ -2188,7 +2268,30 @@ static ssize_t rndis_manufacturer_store(struct device *dev,
 		return size;
 	return -1;
 }
-
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+static ssize_t diag_status_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	int ret;
+	ret=diags;
+	if (ret < 0){
+		printk(KERN_ERR "%s:  read diag_status data fail. \n", __func__);
+		return sprintf(buf, "%d\n", 0xffff);
+	}
+	return sprintf(buf, "%d\n", ret);
+}
+static ssize_t diag_status_store(struct device *dev,
+	struct device_attribute *attr, const char *buf,size_t count)
+{
+	int value;
+	sscanf(buf, "%d\n", &value);
+	diags=value;
+	return count;
+}
+static DEVICE_ATTR(diag_status, 0664, diag_status_show, diag_status_store);
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 static DEVICE_ATTR(manufacturer, S_IRUGO | S_IWUSR, rndis_manufacturer_show,
 						    rndis_manufacturer_store);
 
@@ -2456,13 +2559,11 @@ struct mass_storage_function_config {
 static int mass_storage_function_init(struct android_usb_function *f,
 					struct usb_composite_dev *cdev)
 {
-	struct android_dev *dev = cdev_to_android_dev(cdev);
 	struct mass_storage_function_config *config;
 	struct fsg_common *common;
 	int err;
-	int i, n;
-	char name[FSG_MAX_LUNS][MAX_LUN_NAME];
-	u8 uicc_nluns = dev->pdata ? dev->pdata->uicc_nluns : 0;
+	int i;
+	const char *name[3];
 
 	config = kzalloc(sizeof(struct mass_storage_function_config),
 							GFP_KERNEL);
@@ -2471,30 +2572,13 @@ static int mass_storage_function_init(struct android_usb_function *f,
 		return -ENOMEM;
 	}
 
+	config->fsg.vendor_name = "COOLPAD";
+	config->fsg.product_name = "USB Drivers";
 	config->fsg.nluns = 1;
-	snprintf(name[0], MAX_LUN_NAME, "lun");
-	config->fsg.luns[0].removable = 1;
-
-	if (dev->pdata && dev->pdata->cdrom) {
-		config->fsg.luns[config->fsg.nluns].cdrom = 1;
-		config->fsg.luns[config->fsg.nluns].ro = 1;
-		config->fsg.luns[config->fsg.nluns].removable = 0;
-		snprintf(name[config->fsg.nluns], MAX_LUN_NAME, "rom");
-		config->fsg.nluns++;
-	}
-
-	if (uicc_nluns > FSG_MAX_LUNS - config->fsg.nluns) {
-		uicc_nluns = FSG_MAX_LUNS - config->fsg.nluns;
-		pr_debug("limiting uicc luns to %d\n", uicc_nluns);
-	}
-
-	for (i = 0; i < uicc_nluns; i++) {
-		n = config->fsg.nluns;
-		snprintf(name[n], MAX_LUN_NAME, "uicc%d", i);
-		config->fsg.luns[n].removable = 1;
-		config->fsg.nluns++;
-	}
-
+	name[0] = "lun";
+	config->fsg.luns[0].cdrom = 1;
+	config->fsg.luns[0].ro = 1;
+	config->fsg.luns[0].removable = 0;
 	common = fsg_common_init(NULL, cdev, &config->fsg);
 	if (IS_ERR(common)) {
 		kfree(config);
@@ -3247,6 +3331,11 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 			conf = alloc_android_config(dev);
 
 		curr_conf = curr_conf->next;
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+		ums_mode = false;
+		cdrom_mode = false;
+		printk("%s:%s\n",__func__,conf_str);
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 		while (conf_str) {
 			name = strsep(&conf_str, ",");
 			is_ffs = 0;
@@ -3276,7 +3365,18 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 			if (!strcmp(name, "rndis") &&
 				!strcmp(strim(rndis_transports), "BAM2BAM_IPA"))
 				name = "rndis_qc";
-
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+			if (!strncmp(name, "mass_storage", strlen("mass_storage"))) {
+		    	ums_mode = true;
+			}
+			if (!strncmp(name, "cdrom", strlen("cdrom"))) {
+				cdrom_mode = true;
+				if (!ums_mode) {
+					name = "mass_storage";
+					printk("%s:cdrom mode enable\n",__func__);
+				}
+			}
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 			err = android_enable_function(dev, conf, name);
 			if (err)
 				pr_err("android_usb: Cannot enable '%s' (%d)",
@@ -3377,6 +3477,119 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 
 	return size;
 }
+
+#ifdef CONFIG_MMC_YL_PARAMS
+/*add by shchj beginning 20130219*/
+static char params_buff[512] = "PRODUCTLINE";
+static ssize_t SN_show(struct device *pdev, struct device_attribute *attr,
+			char *buf)
+{
+	ssize_t ret = 0;
+
+	memset(params_buff, 0, sizeof(params_buff));
+	strlcpy(params_buff, "PRODUCTLINE", sizeof(params_buff));
+	pr_debug("%s: params_buff=%s\n", __func__, params_buff);
+	ret = yl_params_kernel_read(params_buff, 512);
+	if (ret < 0)
+		pr_err("SN:read PRODUCTLINE from yulong params error\n");
+
+	pr_debug("%s: SN=%s\n", __func__, &params_buff[16]);
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", &params_buff[16]);
+}
+
+
+static ssize_t DRM_show(struct device *pdev, struct device_attribute *attr,
+			char *buf)
+{
+	ssize_t ret = 0;
+
+	memset(params_buff, 0, sizeof(params_buff));
+	strlcpy(params_buff, "DYNAMIC", sizeof(params_buff));
+	pr_debug("%s: params_buff=%s\n", __func__, params_buff);
+	ret = yl_params_kernel_read(params_buff, 512);
+	if (ret < 0)
+		pr_err("read drm from yulong params error\n");
+
+	pr_debug("%s: buf[194]=0x%x\n", __func__, params_buff[194]);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", params_buff[194]);
+}
+
+static ssize_t DRM_store(struct device *pdev, struct device_attribute *attr,
+			const char *buff, size_t size)
+{
+	ssize_t ret = 0;
+	int enabled = 0;
+
+	sscanf(buff, "%d", &enabled);
+	memset(params_buff, 0, sizeof(params_buff));
+	strlcpy(params_buff, "DYNAMIC", sizeof(params_buff));
+	pr_debug("%s: params_buff=%s\n", __func__, params_buff);
+	ret = yl_params_kernel_read(params_buff, 512);
+	if (ret < 0)
+		pr_debug("read drm from yulong params error\n");
+
+	params_buff[194] = enabled;
+	ret = yl_params_kernel_write(params_buff, 512);
+	if (ret < 0)
+		pr_err("write drm to yulong params error\n");
+
+	pr_debug("%s: buf[194]=0x%x; buff=%s\n",
+		__func__, params_buff[194], buff);
+
+	return size;
+}
+
+/*add by shchj ending 20130219*/
+/* juzhitao 20121116 */
+static ssize_t iRP_show(struct device *pdev, struct device_attribute *attr,
+			char *buf)
+{
+	ssize_t ret = 0;
+
+	memset(params_buff, 0, sizeof(params_buff));
+	strlcpy(params_buff, "PRODUCTLINE", sizeof(params_buff));
+	pr_debug("%s: params_buff=%s\n", __func__, params_buff);
+	ret = yl_params_kernel_read(params_buff, 512);
+	if (ret < 0)
+		pr_err("rp:read RP from yulong params error\n");
+
+	pr_debug("%s: rp:buf[104]=0x%x\n", __func__, params_buff[104]);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", params_buff[104]);
+}
+
+#ifdef ENABLE_RP_STORE
+static ssize_t iRP_store(struct device *pdev, struct device_attribute *attr,
+			const char *buff, size_t size)
+{
+	ssize_t ret = 0;
+	int enabled = 0;
+
+	sscanf(buff, "%d", &enabled);
+	memset(params_buff, 0, sizeof(params_buff));
+	strlcpy(params_buff, "PRODUCTLINE", sizeof(params_buff));
+	pr_debug("%s: params_buff=%s\n", __func__, params_buff);
+	ret = yl_params_kernel_read(params_buff, 512);
+	if (ret < 0)
+		pr_err("rp:read RP from yulong params error\n");
+
+	params_buff[104] = enabled;
+	pr_debug("%s: rp:enabled=%d,!!enabled=%d\n",
+		__func__, enabled, !!enabled);
+	ret = yl_params_kernel_write(params_buff, 512);
+	if (ret < 0)
+		pr_err("rp:write RP to yulong params error\n");
+
+	pr_debug("%s: rp:buf[104]=0x%x buf[105]=0x%x buff=%s\n",
+		__func__, params_buff[104], params_buff[105], buff);
+
+	return size;
+}
+#endif
+/* juzhitao 20121116 */
+#endif
 
 static ssize_t pm_qos_show(struct device *pdev,
 			   struct device_attribute *attr, char *buf)
@@ -3518,6 +3731,19 @@ ANDROID_DEV_ATTR(idle_pc_rpm_no_int_secs, "%u\n");
 static DEVICE_ATTR(state, S_IRUGO, state_show, NULL);
 static DEVICE_ATTR(remote_wakeup, S_IRUGO | S_IWUSR,
 		remote_wakeup_show, remote_wakeup_store);
+#ifdef CONFIG_MMC_YL_PARAMS
+/* juzhitao 20121116 */
+#ifdef ENABLE_RP_STORE
+static DEVICE_ATTR(iRP, S_IRUGO | S_IWUSR,
+		iRP_show, iRP_store);
+#else
+static DEVICE_ATTR(iRP, S_IRUGO | S_IWUSR, iRP_show, NULL);
+#endif
+/*add by shchj begining 20130219*/
+static DEVICE_ATTR(SN, S_IRUGO, SN_show, NULL);
+static DEVICE_ATTR(DRM, S_IRUGO | S_IWUSR, DRM_show, DRM_store);
+/*add by shchj ending 20130219*/
+#endif
 
 static struct device_attribute *android_usb_attributes[] = {
 	&dev_attr_idVendor,
@@ -3540,6 +3766,18 @@ static struct device_attribute *android_usb_attributes[] = {
 	&dev_attr_pm_qos_state,
 	&dev_attr_state,
 	&dev_attr_remote_wakeup,
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+	&dev_attr_diag_status,
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
+#ifdef CONFIG_MMC_YL_PARAMS
+	/* juzhitao 20121116 */
+	&dev_attr_iRP,
+	/* shchj 20130219 */
+	&dev_attr_SN,
+	&dev_attr_DRM,
+#endif
 	NULL
 };
 
@@ -3715,6 +3953,7 @@ static void android_disconnect(struct usb_composite_dev *cdev)
 	   so we need to inform it when we are disconnected.
 	 */
 	acc_disconnect();
+	wake_lock_timeout(&wlock, HZ);
 
 	dev->connected = 0;
 	schedule_work(&dev->work);
@@ -3978,6 +4217,7 @@ static int android_probe(struct platform_device *pdev)
 	INIT_WORK(&android_dev->work, android_work);
 	INIT_DELAYED_WORK(&android_dev->pm_qos_work, android_pm_qos_work);
 	mutex_init(&android_dev->mutex);
+	wake_lock_init(&wlock, WAKE_LOCK_SUSPEND, "usb_event");
 
 	android_dev->pdata = pdata;
 
@@ -4021,25 +4261,17 @@ static int android_probe(struct platform_device *pdev)
 				__func__);
 		goto err_probe;
 	}
-
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+	ret = usb_register_client(&usb_ms_notif);
+	if (ret)
+		printk( "Unable to register usb_notifier: %d\n",ret);
+	g_android_dev=android_dev;
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 	/* pm qos request to prevent apps idle power collapse */
 	android_dev->curr_pm_qos_state = NO_USB_VOTE;
 	if (pdata && pdata->pm_qos_latency[0]) {
-		/*
-		 * The default request type PM_QOS_REQ_ALL_CORES is
-		 * applicable to all CPU cores that are online and
-		 * would have a power impact when there are more
-		 * number of CPUs. PM_QOS_REQ_AFFINE_IRQ request
-		 * type shall update/apply the vote only to that CPU to
-		 * which IRQ's affinity is set to.
-		 */
-#ifdef CONFIG_SMP
-		android_dev->pm_qos_req_dma.type = PM_QOS_REQ_AFFINE_IRQ;
-		android_dev->pm_qos_req_dma.irq =
-				android_dev->cdev->gadget->interrupt_num;
-#endif
-		pm_qos_add_request(&android_dev->pm_qos_req_dma,
-			PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
 		android_dev->down_pm_qos_sample_sec = DOWN_PM_QOS_SAMPLE_SEC;
 		android_dev->down_pm_qos_threshold = DOWN_PM_QOS_THRESHOLD;
 		android_dev->up_pm_qos_sample_sec = UP_PM_QOS_SAMPLE_SEC;
@@ -4097,7 +4329,11 @@ static int android_remove(struct platform_device *pdev)
 		android_class = NULL;
 		usb_composite_unregister(&android_usb_driver);
 	}
-
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+	usb_unregister_client(&usb_ms_notif);
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 	return 0;
 }
 

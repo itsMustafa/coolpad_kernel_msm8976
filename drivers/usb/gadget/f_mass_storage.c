@@ -219,7 +219,12 @@
 #include <linux/usb/composite.h>
 
 #include "gadget_chips.h"
-
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+#include <linux/usb_notify.h>
+#define OPEN_DIAG 0xf1
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 
 /*------------------------------------------------------------------------*/
 
@@ -229,12 +234,25 @@
 static const char fsg_string_interface[] = "Mass Storage";
 
 #include "storage_common.c"
-
+/*< LAFITE-1176 guohongtao 2016-02-03 begin>*/
+/*< LAFITE-349 guohongtao 2016-01-18 begin>*/
+#ifdef CONFIG_PRODUCT_S2
+static char cdrom_name[]="LeMobile Phone CDROM";
+static char tfcard_name[]="LeMobile Phone TFcard";
+#endif
+/*< LAFITE-349 guohongtao 2016-01-18 end>*/
+/*< LAFITE-1176 guohongtao 2016-02-03 end*/
 #ifdef CONFIG_USB_CSW_HACK
 static int write_error_after_csw_sent;
 static int must_report_residue;
 static int csw_hack_sent;
 #endif
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+static bool ums_mode = false;
+static int ums_count = 0;
+static bool cdrom_mode = false;
+static int cdrom_count = 0;
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 /*-------------------------------------------------------------------------*/
 
 /*If USB mass storage vfs operation is stuck for more than 10 sec
@@ -545,7 +563,9 @@ static int fsg_setup(struct usb_function *f,
 	u16			w_index = le16_to_cpu(ctrl->wIndex);
 	u16			w_value = le16_to_cpu(ctrl->wValue);
 	u16			w_length = le16_to_cpu(ctrl->wLength);
-
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+	u8 nluns = 0;
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 	if (!fsg_is_set(fsg->common))
 		return -EOPNOTSUPP;
 
@@ -583,8 +603,15 @@ static int fsg_setup(struct usb_function *f,
 				w_length != 1)
 			return -EDOM;
 		VDBG(fsg, "get max LUN\n");
-		*(u8 *)req->buf = fsg->common->nluns - 1;
-
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+		if (ums_mode) {
+			nluns += ums_count;
+		}
+		if (cdrom_mode) {
+			nluns += cdrom_count;
+		}
+		*(u8 *)req->buf = nluns - 1;
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 		/* Respond with data/status */
 		req->length = min((u16)1, w_length);
 		return ep0_queue(fsg->common);
@@ -2233,7 +2260,14 @@ static int do_scsi_command(struct fsg_common *common)
 		if (reply == 0)
 			reply = do_write(common);
 		break;
-
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+#ifdef CONFIG_USB_NOTIFY_AND_DIAG_SWITCH
+	case OPEN_DIAG:
+		printk("%s,scsi command is 0x%x\n",__func__,common->cmnd[0]);
+		usb_notifier_call_chain(USB_MS_DEVICE_REMOVE);
+		break;
+#endif
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 	/*
 	 * Some mandatory commands that we recognize but don't implement.
 	 * They don't mean much in this setting.  It's left as an exercise
@@ -2342,6 +2376,11 @@ static int received_cbw(struct fsg_dev *fsg, struct fsg_buffhd *bh)
 	if (common->data_size == 0)
 		common->data_dir = DATA_DIR_NONE;
 	common->lun = cbw->Lun;
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+	if (!ums_mode) {
+		common->lun += ums_count;
+	}
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 	if (common->lun < common->nluns)
 		common->curlun = &common->luns[common->lun];
 	else
@@ -2849,6 +2888,13 @@ static int create_lun_device(struct fsg_common *common,
 
 	for (i = add_lun_index; i < nluns; ++i, ++curlun, ++lcfg) {
 		curlun->cdrom = !!lcfg->cdrom;
+/*< LAFITE-347 guohongtao 2016-01-14 begin>*/
+		if (!curlun->cdrom) {
+			ums_count += 1;
+		} else {
+			cdrom_count += 1;
+		}
+/*< LAFITE-347 guohongtao 2016-01-14 end>*/
 		curlun->ro = lcfg->cdrom || lcfg->ro;
 		curlun->initially_ro = curlun->ro;
 		curlun->removable = lcfg->removable;
@@ -2998,6 +3044,14 @@ buffhds_first_it:
 
 	/* Prepare inquiryString */
 	i = get_default_bcdDevice();
+/*< LAFITE-349 guohongtao 2016-01-18 begin>*/
+#ifdef CONFIG_PRODUCT_S2
+	if(cfg->product_name){
+		snprintf(common->inquiry_string, sizeof common->inquiry_string,tfcard_name);
+	}else{
+		snprintf(common->inquiry_string, sizeof common->inquiry_string,cdrom_name);
+	}
+#else
 	snprintf(common->inquiry_string, sizeof common->inquiry_string,
 		 "%-8s%-16s%04x", cfg->vendor_name ?: "Linux",
 		 /* Assume product name dependent on the first LUN */
@@ -3005,7 +3059,8 @@ buffhds_first_it:
 				     ? "File-Stor Gadget"
 				     : "File-CD Gadget"),
 		 i);
-
+#endif
+/*< LAFITE-349 guohongtao 2016-01-18 end>*/
 	/*
 	 * Some peripheral controllers are known not to be able to
 	 * halt bulk endpoints correctly.  If one of them is present,

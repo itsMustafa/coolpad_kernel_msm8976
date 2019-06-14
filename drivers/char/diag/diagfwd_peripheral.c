@@ -435,7 +435,9 @@ int diagfwd_peripheral_init(void)
 
 	for (peripheral = 0; peripheral < NUM_PERIPHERALS; peripheral++) {
 		for (type = 0; type < NUM_TYPES; type++) {
+            /*< LAFITE-2336 wanghao 20160225 begin */
 			fwd_info = &peripheral_info[type][peripheral];
+            /* LAFITE-2336 wanghao 20160225 end >*/
 			fwd_info->peripheral = peripheral;
 			fwd_info->type = type;
 			fwd_info->ctxt = NULL;
@@ -443,6 +445,7 @@ int diagfwd_peripheral_init(void)
 			fwd_info->ch_open = 0;
 			fwd_info->read_bytes = 0;
 			fwd_info->write_bytes = 0;
+            /*< LAFITE-2336 wanghao 20160225 begin */
 			spin_lock_init(&fwd_info->buf_lock);
 			mutex_init(&fwd_info->data_mutex);
 			/*
@@ -452,6 +455,7 @@ int diagfwd_peripheral_init(void)
 			 */
 			if (type != TYPE_CNTL)
 				fwd_info->inited = 1;
+            /* LAFITE-2336 wanghao 20160225 end >*/
 		}
 		driver->diagfwd_data[peripheral] =
 			&peripheral_info[TYPE_DATA][peripheral];
@@ -606,13 +610,16 @@ void diagfwd_deregister(uint8_t peripheral, uint8_t type, void *ctxt)
 	}
 }
 
+/*< LAFITE-9919 rentianzhi 20160503 begin */
 void diagfwd_close_transport(uint8_t transport, uint8_t peripheral)
 {
 	struct diagfwd_info *fwd_info = NULL;
 	struct diagfwd_info *dest_info = NULL;
 	int (*init_fn)(uint8_t) = NULL;
 	void (*invalidate_fn)(void *, struct diagfwd_info *) = NULL;
-	int (*check_channel_state)(void *) = NULL;
+    /*< LAFITE-2336 wanghao 20160225 begin */
+    int (*check_channel_state)(void *) = NULL;
+    /* LAFITE-2336 wanghao 20160225 end >*/
 	uint8_t transport_open = 0;
 
 	if (peripheral >= NUM_PERIPHERALS)
@@ -623,23 +630,28 @@ void diagfwd_close_transport(uint8_t transport, uint8_t peripheral)
 		transport_open = TRANSPORT_SOCKET;
 		init_fn = diag_socket_init_peripheral;
 		invalidate_fn = diag_socket_invalidate;
-		check_channel_state = diag_socket_check_state;
+        /*< LAFITE-2336 wanghao 20160225 begin */
+        check_channel_state = diag_socket_check_state;
+        /* LAFITE-2336 wanghao 20160225 end >*/
 		break;
 	case TRANSPORT_SOCKET:
 		transport_open = TRANSPORT_SMD;
 		init_fn = diag_smd_init_peripheral;
 		invalidate_fn = diag_smd_invalidate;
-		check_channel_state = diag_smd_check_state;
+        /*< LAFITE-2336 wanghao 20160225 begin */
+        check_channel_state = diag_smd_check_state;
+        /* LAFITE-2336 wanghao 20160225 end >*/
 		break;
 	default:
 		return;
 
 	}
-
-	fwd_info = &early_init_info[transport][peripheral];
+    /*< LAFITE-2336 wanghao 20160225 begin */
+    fwd_info = &early_init_info[transport][peripheral];
 	if (fwd_info->p_ops && fwd_info->p_ops->close)
 		fwd_info->p_ops->close(fwd_info->ctxt);
-	fwd_info = &early_init_info[transport_open][peripheral];
+    mutex_lock(&driver->diagfwd_channel_mutex);
+    fwd_info = &early_init_info[transport_open][peripheral];
 	dest_info = &peripheral_info[TYPE_CNTL][peripheral];
 	dest_info->inited = 1;
 	dest_info->ctxt = fwd_info->ctxt;
@@ -657,9 +669,12 @@ void diagfwd_close_transport(uint8_t transport, uint8_t peripheral)
 		diagfwd_late_open(dest_info);
 	diagfwd_cntl_open(dest_info);
 	init_fn(peripheral);
+	mutex_unlock(&driver->diagfwd_channel_mutex);
 	diagfwd_queue_read(&peripheral_info[TYPE_DATA][peripheral]);
 	diagfwd_queue_read(&peripheral_info[TYPE_CMD][peripheral]);
+    /* LAFITE-2336 wanghao 20160225 end >*/
 }
+/* LAFITE-9919 rentianzhi 20160503 end >*/
 
 int diagfwd_write(uint8_t peripheral, uint8_t type, void *buf, int len)
 {
