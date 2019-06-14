@@ -1,5 +1,10 @@
 ifeq ($(CONFIG_OF),y)
 
+ifeq ($(CONFIG_YULONG_PRODUCT),y)
+DTS_PATH := arch/$(SRCARCH)/boot/dts/yulong/$(KPROD_NAME)/$(KHW_CONFIG)
+dtb-y += $(patsubst $(DTS_PATH)/%.dts, %.dtb, $(shell cd $(srctree); find -L $(DTS_PATH) -maxdepth 1 -name "*.dts"))
+else
+DTS_PATH := $(src)
 dtb-$(CONFIG_ARCH_MSM8974) += msm8974-v1-cdp.dtb \
 	msm8974-v1-fluid.dtb \
 	msm8974-v1-liquid.dtb \
@@ -65,6 +70,13 @@ dtb-$(CONFIG_ARCH_MSM8909) += msm8909-sim.dtb \
 	msm8208-1gb-rcm.dtb \
 	msm8208-qhd-cdp.dtb \
 	msm8208-qhd-rcm.dtb
+#/*< LAFITE-237 xingbin 20151218 begin */
+#/*< LAFITE-171 xingbin 20160128 begin */
+ifeq ($(CONFIG_PRODUCT_S2),y)
+dtb-$(CONFIG_PRODUCT_S2) += s2.dtb
+else
+#/* LAFITE-171 xingbin 20160128 end >*/
+#/* LAFITE-237 xingbin 20151218 end >*/
 dtb-$(CONFIG_ARCH_MSM8916) += msm8916-sim.dtb \
 	msm8916-rumi.dtb \
 	msm8916-cdp.dtb \
@@ -163,6 +175,9 @@ dtb-$(CONFIG_ARCH_MSM8916) += msm8916-sim.dtb \
 	msm8929-qrd-skul.dtb \
 	msm8929-qrd-skulb.dtb \
 	msm8929-cdp-jdi.dtb
+#/*< LAFITE-237 xingbin 20151218 begin */
+endif
+#/* LAFITE-237 xingbin 20151218 end >*/
 dtb-$(CONFIG_ARCH_MSM8226) += msm8226-sim.dtb \
 	msm8226-fluid.dtb \
 	msm8226-v1-cdp.dtb \
@@ -314,6 +329,7 @@ dtb-$(CONFIG_ARCH_MSM8992) += msm8992-sim.dtb \
 	msm8992-pmi8994-pm8004-cdp.dtb \
 	msm8992-pmi8994-pm8004-mtp.dtb
 dtb-$(CONFIG_ARCH_MDMFERMIUM) += mdmfermium-rumi.dtb
+endif
 
 DTB_NAMES := $(subst $\",,$(CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE_NAMES))
 ifneq ($(DTB_NAMES),)
@@ -326,9 +342,12 @@ targets += dtbs
 targets += $(addprefix ../, $(DTB_LIST))
 endif
 
-$(obj)/../%.dtb: $(src)/%.dts FORCE
+DTS_OBJS := $(patsubst %.dtb, $(DTS_PATH)/%.dts, $(DTB_LIST))
+
+$(obj)/../%.dtb: $(DTS_PATH)/%.dts FORCE
+	@echo '  dtb: build dts from $<'
 	$(call if_changed_dep,dtc)
 
-dtbs: $(addprefix $(obj)/../,$(DTB_LIST))
+dtbs: $(DTS_OBJS) $(addprefix $(obj)/../,$(DTB_LIST))
 
 clean-files := *.dtb

@@ -101,8 +101,14 @@ else
 	$(Q)$< --defconfig=arch/$(SRCARCH)/configs/$(KBUILD_DEFCONFIG) $(Kconfig)
 endif
 
+ifneq ($(KPROD_NAME),)
+%_defconfig: $(obj)/conf
+	$(Q)bash $(srctree)/scripts/kconfig/yl_config.sh $(KPROD_NAME) $(KHW_CONFIG) $@
+	$(Q)$< --defconfig=arch/$(SRCARCH)/configs/.$@ $(Kconfig)
+else
 %_defconfig: $(obj)/conf
 	$(Q)$< --defconfig=arch/$(SRCARCH)/configs/$@ $(Kconfig)
+endif
 
 # Help text used by make help
 help:

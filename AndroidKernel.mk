@@ -74,6 +74,12 @@ KERNEL_HEADERS_INSTALL := $(KERNEL_OUT)/usr
 KERNEL_MODULES_INSTALL := system
 KERNEL_MODULES_OUT := $(TARGET_OUT)/lib/modules
 
+ifneq ($(strip $(KERNEL_PRDCONFIG)),)
+KPROD_NAME := $(shell echo $(KERNEL_PRDCONFIG) | tr A-Z a-z | cut -d "_" -f2-)
+KHW_CONFIG := $(shell echo $(KERNEL_PRDCONFIG) | tr A-Z a-z | awk -F _ '{print $$1;}')
+export KPROD_NAME KHW_CONFIG
+endif
+
 TARGET_PREBUILT_KERNEL := $(TARGET_PREBUILT_INT_KERNEL)
 $(info TARGET_PREBUILT_KERNEL is $(TARGET_PREBUILT_KERNEL))
 
