@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
-USER_AGENT="WireGuard-AndroidROMBuild/0.2 ($(uname -a))"
+
+USER_AGENT="WireGuard-AndroidROMBuild/0.1 ($(uname -a))"
 
 [[ $(( $(date +%s) - $(stat -c %Y "net/wireguard/.check" 2>/dev/null || echo 0) )) -gt 86400 ]] || exit 0
 
