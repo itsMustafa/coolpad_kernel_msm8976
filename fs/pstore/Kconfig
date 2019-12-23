@@ -66,3 +66,10 @@ config PSTORE_LAST_KMSG
        help
          When the option is enabled, pstore will export a proc filesystem
          interface /proc/last_kmsg.
+
+config YL_PSTORE
+	bool "add yulong pstore"
+	depends on PSTORE
+	help
+	yulong modify for different ddr size.
+
