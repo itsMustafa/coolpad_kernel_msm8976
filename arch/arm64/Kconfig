@@ -734,4 +734,19 @@ if CRYPTO
 source "arch/arm64/crypto/Kconfig"
 endif
 
+source "arch/arm64/product_list/Kconfig"
+
+config APP_PROFILE
+	bool "Enable app profile feature"
+	depends on ARCH_MSM
+	help
+	  Enable app profile to control cpu adn gpu freq
+
+config YL_SET_VOLTAGE_LEVEL
+	bool "Set voltage level"
+	depends on ARCH_MSM
+	  help
+	  Set voltage level
+
+
 source "lib/Kconfig"
