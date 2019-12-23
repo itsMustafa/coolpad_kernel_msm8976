@@ -67,6 +67,8 @@ dtb-$(CONFIG_ARCH_MSM8909) += msm8909-sim.dtb \
 	msm8208-qhd-rcm.dtb
 ifeq ($(CONFIG_PRODUCT_S2),y)
 dtb-$(CONFIG_PRODUCT_S2) += s2.dtb
+else ifeq ($(CONFIG_PRODUCT_C1),y)
+dtb-$(CONFIG_PRODUCT_C1) += msm8976-mtp-cool.dtb
 else
 dtb-$(CONFIG_ARCH_MSM8916) += msm8916-sim.dtb \
 	msm8916-rumi.dtb \
