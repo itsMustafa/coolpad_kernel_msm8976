@@ -213,6 +213,7 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
 	POWER_SUPPLY_PROP_BATTERY_TYPE,
+	POWER_SUPPLY_PROP_YL_CRTL_CHG_INTERFACE,
 };
 
 enum power_supply_type {
@@ -230,6 +231,7 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_BMS,		/* Battery Monitor System */
 	POWER_SUPPLY_TYPE_USB_PARALLEL,		/* USB Parallel Path */
 	POWER_SUPPLY_TYPE_WIPOWER,		/* Wipower */
+	POWER_SUPPLY_TYPE_YL_BATTERY,
 };
 
 enum power_supply_notifier_events {
