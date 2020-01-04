@@ -57,6 +57,13 @@
 			mpp@a100 {
 				reg = <0xa100 0x100>;
 				qcom,pin-num = <2>;
+				status = "okay";
+				qcom,mode = <6>; /* Current Sink */
+				qcom,invert = <0>; /* Disable invert */
+				qcom,src-sel = <4>; /* DTEST1 */
+				qcom,cs-out= <7>; /* output to sync*/
+				qcom,master-en = <1>; /* Enable MPP */
+
 			};
 
 			mpp@a200 {
