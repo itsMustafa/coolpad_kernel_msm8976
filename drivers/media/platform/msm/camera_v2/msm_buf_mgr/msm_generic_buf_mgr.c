@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -106,8 +106,10 @@ static int32_t msm_buf_mngr_get_buf_by_idx(struct msm_buf_mngr_device *dev,
 		pr_err("%s:No mem\n", __func__);
 		return -ENOMEM;
 	}
-	if (WARN_ON(!buf_info))
+	if (!buf_info) {
+		kfree(new_entry);
 		return -EIO;
+	}
 
 	INIT_LIST_HEAD(&new_entry->entry);
 	new_entry->vb2_buf = dev->vb2_ops.get_buf_by_idx(buf_info->session_id,
@@ -298,7 +300,7 @@ static void msm_buf_mngr_sd_shutdown(struct msm_buf_mngr_device *dev,
 			pr_info("%s: Delete invalid bufs =%pK, session_id=%u, bufs->ses_id=%d, str_id=%d, idx=%d\n",
 				__func__, (void *)bufs, session->session,
 				bufs->session_id, bufs->stream_id,
-				bufs->vb2_buf->v4l2_buf.index);
+				bufs->index);
 			if (session->session == bufs->session_id) {
 				list_del_init(&bufs->entry);
 				kfree(bufs);
@@ -306,7 +308,6 @@ static void msm_buf_mngr_sd_shutdown(struct msm_buf_mngr_device *dev,
 		}
 	}
 	spin_unlock_irqrestore(&dev->buf_q_spinlock, flags);
-
 	mutex_lock(&dev->cont_mutex);
 	if (!list_empty(&dev->cont_qhead))
 		msm_buf_mngr_contq_cleanup(dev, session);
@@ -546,17 +547,14 @@ static long msm_buf_mngr_subdev_ioctl(struct v4l2_subdev *sd,
 				return -EINVAL;
 			if (!k_ioctl.ioctl_ptr)
 				return -EINVAL;
-			if (!is_compat_task()) {
-				MSM_CAM_GET_IOCTL_ARG_PTR(&tmp,
-					&k_ioctl.ioctl_ptr, sizeof(tmp));
-				if (copy_from_user(&buf_info,
-					(void __user *)tmp,
-					sizeof(struct msm_buf_mngr_info))) {
-					return -EFAULT;
-				}
-				k_ioctl.ioctl_ptr = (uintptr_t)&buf_info;
-			}
 
+			MSM_CAM_GET_IOCTL_ARG_PTR(&tmp, &k_ioctl.ioctl_ptr,
+				sizeof(tmp));
+			if (copy_from_user(&buf_info, tmp,
+				sizeof(struct msm_buf_mngr_info))) {
+				return -EFAULT;
+			}
+			k_ioctl.ioctl_ptr = (uintptr_t)&buf_info;
 			argp = &k_ioctl;
 			rc = msm_cam_buf_mgr_ops(cmd, argp);
 			}
@@ -583,6 +581,8 @@ static long msm_buf_mngr_subdev_ioctl(struct v4l2_subdev *sd,
 	case VIDIOC_MSM_BUF_MNGR_FLUSH:
 		rc = msm_generic_buf_mngr_flush(buf_mngr_dev, argp);
 		break;
+	case MSM_SD_UNNOTIFY_FREEZE:
+		break;
 	case MSM_SD_SHUTDOWN:
 		msm_buf_mngr_sd_shutdown(buf_mngr_dev, argp);
 		break;
@@ -600,7 +600,8 @@ static long msm_camera_buf_mgr_fetch_buf_info(
 		struct msm_buf_mngr_info32_t *buf_info32,
 		struct msm_buf_mngr_info *buf_info, unsigned long arg)
 {
-	WARN_ON(!arg || !buf_info32 || !buf_info);
+	if (!arg || !buf_info32 || !buf_info)
+		return -EINVAL;
 
 	if (copy_from_user(buf_info32, (void __user *)arg,
 				sizeof(struct msm_buf_mngr_info32_t)))
@@ -622,7 +623,8 @@ static long msm_camera_buf_mgr_update_buf_info(
 		struct msm_buf_mngr_info32_t *buf_info32,
 		struct msm_buf_mngr_info *buf_info, unsigned long arg)
 {
-	WARN_ON(!arg || !buf_info32 || !buf_info);
+	if (!arg || !buf_info32 || !buf_info)
+		return -EINVAL;
 
 	buf_info32->session_id = buf_info->session_id;
 	buf_info32->stream_id = buf_info->stream_id;
@@ -834,13 +836,8 @@ static int32_t __init msm_buf_mngr_init(void)
 	/* Sub-dev */
 	v4l2_subdev_init(&msm_buf_mngr_dev->subdev.sd,
 		&msm_buf_mngr_subdev_ops);
-
-	msm_buf_v4l2_subdev_fops.owner = v4l2_subdev_fops.owner;
-	msm_buf_v4l2_subdev_fops.open = v4l2_subdev_fops.open;
+	msm_cam_copy_v4l2_subdev_fops(&msm_buf_v4l2_subdev_fops);
 	msm_buf_v4l2_subdev_fops.unlocked_ioctl = msm_buf_subdev_fops_ioctl;
-	msm_buf_v4l2_subdev_fops.release = v4l2_subdev_fops.release;
-	msm_buf_v4l2_subdev_fops.poll = v4l2_subdev_fops.poll;
-
 #ifdef CONFIG_COMPAT
 	msm_buf_v4l2_subdev_fops.compat_ioctl32 =
 			msm_bmgr_subdev_fops_compat_ioctl;
