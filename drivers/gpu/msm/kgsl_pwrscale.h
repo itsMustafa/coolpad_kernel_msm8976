@@ -24,6 +24,7 @@
 #define KGSL_PWREVENT_STATE	0
 #define KGSL_PWREVENT_GPU_FREQ	1
 #define KGSL_PWREVENT_BUS_FREQ	2
+#define KGSL_PWREVENT_MAX	3
 
 /**
  * Amount of time running at a level to be considered
