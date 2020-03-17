@@ -10,6 +10,14 @@
 #include <linux/input.h>
 #include <linux/kthread.h>
 
+/* Fixes for older kernels */
+#ifndef MAX_RT_PRIO
+#define MAX_RT_PRIO		100
+#endif
+#ifndef MIN_NICE
+#define MIN_NICE	-20
+#endif
+
 enum {
 	SCREEN_OFF,
 	INPUT_BOOST,
