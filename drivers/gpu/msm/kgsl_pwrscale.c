@@ -625,12 +625,6 @@ int kgsl_pwrscale_init(struct device *dev, const char *governor)
 				sizeof(struct kgsl_pwr_event), GFP_KERNEL);
 		pwrscale->history[i].type = i;
 	}
-	/*
-	 * Enable POPP feature if target supports it, by default
-	 * it is disabled.
-	 */
-	if (pdata->popp_enable)
-		set_bit(POPP_ON, &pwrscale->popp_state);
 
 	return 0;
 }
