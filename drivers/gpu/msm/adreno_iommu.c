@@ -939,7 +939,8 @@ int _set_pagetable_cpu(struct adreno_ringbuffer *rb,
 int _set_pagetable_gpu(struct adreno_ringbuffer *rb,
 			struct kgsl_pagetable *new_pt)
 {
-	unsigned int *link = NULL, *cmds;
+	unsigned int link[PAGE_SIZE / sizeof(unsigned int)];
+	unsigned int *cmds = link;
 	struct kgsl_device *device = rb->device;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	int result;
