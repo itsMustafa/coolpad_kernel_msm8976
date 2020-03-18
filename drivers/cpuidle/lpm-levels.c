@@ -409,15 +409,6 @@ again:
 				}
 			}
 			if (failed >= cpu->ref_premature_cnt) {
-				*idx_restrict = j;
-				do_div(total, failed);
-				for (i = 0; i < j; i++) {
-					if (total < max_residency[i]) {
-						*idx_restrict = i+1;
-						total = max_residency[i];
-						break;
-					}
-				}
 				*idx_restrict_time = total;
 				history->stime = ktime_to_us(ktime_get())
 						+ *idx_restrict_time;
