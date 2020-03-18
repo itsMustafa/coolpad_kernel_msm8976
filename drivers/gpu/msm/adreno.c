@@ -2377,6 +2377,9 @@ int adreno_spin_idle(struct kgsl_device *device)
 
 		if (adreno_isidle(device))
 			return 0;
+
+		/* relax tight loop */
+		cond_resched();
 	}
 
 	return -ETIMEDOUT;
