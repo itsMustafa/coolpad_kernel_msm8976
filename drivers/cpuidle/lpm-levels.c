@@ -558,8 +558,7 @@ static int cpu_power_select(struct cpuidle_device *dev,
 		msm_pm_set_timer(modified_time_us);
 
 	if ((predicted || (idx_restrict != (cpu->nlevels + 1)))
-			&& ((best_level >= 0)
-			&& (best_level < (cpu->nlevels-1)))) {
+			&& (best_level < (cpu->nlevels-1))) {
 		htime = predicted + tmr_add;
 		if (htime == tmr_add)
 			htime = idx_restrict_time;
