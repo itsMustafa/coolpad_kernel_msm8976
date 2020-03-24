@@ -408,6 +408,7 @@ again:
 					total += history->resi[i];
 				}
 			}
+
 			if (failed >= cpu->ref_premature_cnt) {
 				*idx_restrict_time = total;
 				history->stime = ktime_to_us(ktime_get())
@@ -1262,9 +1263,10 @@ static int lpm_cpuidle_enter(struct cpuidle_device *dev,
 	struct lpm_cluster *cluster = per_cpu(cpu_cluster, dev->cpu);
 	int64_t time = ktime_to_ns(ktime_get());
 	bool success = true;
+	int idx = cpu_power_select(dev, cluster->cpu, &index);
 	const struct cpumask *cpumask = get_cpu_mask(dev->cpu);
 	struct power_params *pwr_params;
-
+	
 	trace_cpu_idle_rcuidle(idx, dev->cpu);
 
 	if (need_resched()) {
