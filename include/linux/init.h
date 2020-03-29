@@ -12,7 +12,7 @@
  *
  * Usage:
  * For functions:
- *
+ * 
  * You should add __init immediately before the function name, like:
  *
  * static void __init initme(int x, int y)
@@ -165,10 +165,10 @@ extern bool initcall_debug;
 
 #ifndef __ASSEMBLY__
 
-/* initcalls are now grouped by functionality into separate
+/* initcalls are now grouped by functionality into separate 
  * subsections. Ordering inside the subsections is determined
- * by link order.
- * For backwards compatibility, initcall() puts the call in
+ * by link order. 
+ * For backwards compatibility, initcall() puts the call in 
  * the device init subsection.
  *
  * The `id' arg to __define_initcall() is needed so that multiple initcalls
@@ -260,7 +260,7 @@ void __init parse_early_options(char *cmdline);
 /**
  * module_init() - driver initialization entry point
  * @x: function to be run at kernel boot time or module insertion
- *
+ * 
  * module_init() will either be called during do_initcalls() (if
  * builtin) or at module insertion time (if a module).  There can only
  * be one per module.
@@ -270,7 +270,7 @@ void __init parse_early_options(char *cmdline);
 /**
  * module_exit() - driver exit entry point
  * @x: function to be run when driver is removed
- *
+ * 
  * module_exit() will wrap the driver clean-up code
  * with cleanup_module() when used with rmmod when
  * the driver is a module.  If the driver is statically
@@ -297,13 +297,13 @@ void __init parse_early_options(char *cmdline);
 #define module_init(initfn)					\
 	static inline initcall_t __inittest(void)		\
 	{ return initfn; }					\
-	int init_module(void) __init __attribute__((alias(#initfn)));
+	int init_module(void) __attribute__((alias(#initfn)));
 
 /* This is only required if you want to be unloadable. */
 #define module_exit(exitfn)					\
 	static inline exitcall_t __exittest(void)		\
 	{ return exitfn; }					\
-	void cleanup_module(void) __exit __attribute__((alias(#exitfn)));
+	void cleanup_module(void) __attribute__((alias(#exitfn)));
 
 #define __setup_param(str, unique_id, fn)	/* nothing */
 #define __setup(str, func) 			/* nothing */

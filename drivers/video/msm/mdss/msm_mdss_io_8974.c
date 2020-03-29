@@ -391,18 +391,6 @@ static void mdss_dsi_phy_regulator_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 					pinfo->ulps_suspend_enabled) ||
 				(other_ctrl && !other_ctrl->is_phyreg_enabled))
 				mdss_dsi_28nm_phy_regulator_enable(ctrl);
-				/*
-				 * For dsi configurations other than single mode,
-				 * do not reconfigure dsi phy regulator if the
-			 	* other dsi controller is still active.
-			 	*/
-				if (mdss_dsi_is_hw_config_single(sdata) ||
-					(mdss_dsi_is_ctrl_clk_master(ctrl) &&
-						pinfo->ulps_suspend_enabled) ||
-				(other_ctrl && !other_ctrl->is_phyreg_enabled))
-				mdss_dsi_28nm_phy_regulator_enable(ctrl);
-				break;
-			}
 		}
 		ctrl->is_phyreg_enabled = 1;
 	} else {
