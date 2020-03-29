@@ -806,7 +806,7 @@ static uint32_t smp2p_negotiate_features_v0(uint32_t features)
  */
 static void smp2p_negotiation_complete_v0(struct smp2p_out_list_item *out_item)
 {
-	SMP2P_ERR("%s: invalid negotiation complete for v0 pid\n",
+	SMP2P_ERR("%s: invalid negotiation complete for v0 pid %d\n",
 		__func__,
 		SMP2P_GET_REMOTE_PID(out_item, smem_edge_out->rem_loc_proc_id));
 }
