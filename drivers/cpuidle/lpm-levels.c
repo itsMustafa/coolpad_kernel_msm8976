@@ -65,6 +65,16 @@ static bool lpm_prediction;
 module_param_named(lpm_prediction,
 	lpm_prediction, bool, S_IRUGO | S_IWUSR | S_IWGRP);
 
+static uint32_t ref_stddev = 100;
+module_param_named(
+	ref_stddev, ref_stddev, uint, S_IRUGO | S_IWUSR | S_IWGRP
+);
+
+static uint32_t tmr_add = 100;
+module_param_named(
+	tmr_add, tmr_add, uint, S_IRUGO | S_IWUSR | S_IWGRP
+);
+
 struct lpm_history {
 	uint32_t resi[MAXSAMPLES];
 	int mode[MAXSAMPLES];
@@ -388,7 +398,7 @@ again:
 	stddev = int_sqrt(stddev);
 
 	if (((avg > stddev * 6) && (divisor >= (MAXSAMPLES - 1)))
-					|| stddev <= cpu->ref_stddev) {
+					|| stddev <= ref_stddev) {
 		history->stime = ktime_to_us(ktime_get()) + avg;
 		return avg;
 	} else if (divisor  > (MAXSAMPLES - 1)) {
@@ -408,16 +418,9 @@ again:
 					total += history->resi[i];
 				}
 			}
-			if (failed >= cpu->ref_premature_cnt) {
+			if (failed > (MAXSAMPLES-3)) {
 				*idx_restrict = j;
 				do_div(total, failed);
-				for (i = 0; i < j; i++) {
-					if (total < max_residency[i]) {
-						*idx_restrict = i+1;
-						total = max_residency[i];
-						break;
-					}
-				}
 				*idx_restrict_time = total;
 				history->stime = ktime_to_us(ktime_get())
 						+ *idx_restrict_time;
@@ -556,8 +559,8 @@ static int cpu_power_select(struct cpuidle_device *dev,
 
 	if ((predicted || (idx_restrict != (cpu->nlevels + 1)))
 			&& (best_level < (cpu->nlevels-1))) {
-		htime = predicted + cpu->tmr_add;
-		if (htime == cpu->tmr_add)
+		htime = predicted + tmr_add;
+		if (htime == tmr_add)
 			htime = idx_restrict_time;
 		else if (htime > max_residency[best_level])
 			htime = max_residency[best_level];
@@ -956,9 +959,7 @@ static int cluster_configure(struct lpm_cluster *cluster, int idx,
 		struct power_params *pwr_params = &cluster->levels[idx].pwr;
 
 		clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_EXIT, &cpu);
-		clusttimer_start(cluster,
-						 pwr_params->max_residency +
-						 cluster->tmr_add);
+		clusttimer_start(cluster, pwr_params->max_residency + tmr_add);
 		clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_ENTER, &cpu);
 	}
 
@@ -1030,8 +1031,7 @@ static void cluster_prepare(struct lpm_cluster *cluster,
 			clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_EXIT,
 									&ncpu);
 			clusttimer_start(cluster,
-					pwr_params->max_residency +
-							 cluster->tmr_add);
+					pwr_params->max_residency + tmr_add);
 			clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_ENTER,
 									&ncpu);
 		}
