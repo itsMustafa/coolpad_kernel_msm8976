@@ -7799,14 +7799,6 @@ int set_cpus_allowed_ptr(struct task_struct *p, const struct cpumask *new_mask)
 	if (p->flags & PF_PERF_CRITICAL)
 		new_mask = cpu_perf_mask;
 
-<<<<<<< HEAD
-=======
-	/* Force all trivial, unbound kthreads onto the little cluster */
-	if (p->flags & PF_KTHREAD && p->pid != 1 &&
-		cpumask_equal(req_mask, cpu_all_mask))
-		return cpu_lp_mask;
-
->>>>>>> parent of 0674ce3c2f4... Fix compile error
 	rq = task_rq_lock(p, &flags);
 
 	if (cpumask_equal(&p->cpus_allowed, new_mask))
