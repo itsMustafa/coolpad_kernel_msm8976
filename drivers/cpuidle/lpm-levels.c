@@ -696,6 +696,7 @@ static int cluster_predict(struct lpm_cluster *cluster,
 	return ret;
 }
 
+
 static void update_cluster_history_time(struct cluster_history *history,
 						int idx, uint64_t start)
 {
