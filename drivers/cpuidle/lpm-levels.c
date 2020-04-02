@@ -65,6 +65,8 @@ static bool lpm_prediction;
 module_param_named(lpm_prediction,
 	lpm_prediction, bool, S_IRUGO | S_IWUSR | S_IWGRP);
 
+static uint32_t ref_premature_cnt = 1;
+
 struct lpm_history {
 	uint32_t resi[MAXSAMPLES];
 	int mode[MAXSAMPLES];
@@ -345,6 +347,7 @@ static uint64_t lpm_cpuidle_predict(struct cpuidle_device *dev,
 	int64_t thresh = LLONG_MAX;
 	struct lpm_history *history = &per_cpu(hist, dev->cpu);
 	uint32_t *min_residency = get_per_cpu_min_residency(dev->cpu);
+	uint32_t *max_residency = get_per_cpu_max_residency(dev->cpu);
 
 	if (!lpm_prediction)
 		return 0;
@@ -408,8 +411,17 @@ again:
 					total += history->resi[i];
 				}
 			}
+			if (failed >= ref_premature_cnt) {
+				*idx_restrict = j;
+				do_div(total, failed);
+				for (i = 0; i < j; i++) {
+					if (total < max_residency[i]) {
+						*idx_restrict = i+1;
+						total = max_residency[i];
+						break;
+					}
+				}
 
-			if (failed >= cpu->ref_premature_cnt) {
 				*idx_restrict_time = total;
 				history->stime = ktime_to_us(ktime_get())
 						+ *idx_restrict_time;
@@ -683,6 +695,7 @@ static int cluster_predict(struct lpm_cluster *cluster,
 
 	return ret;
 }
+
 
 static void update_cluster_history_time(struct cluster_history *history,
 						int idx, uint64_t start)
