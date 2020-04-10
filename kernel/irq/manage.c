@@ -19,7 +19,6 @@
 #include <linux/sched/rt.h>
 #include <linux/task_work.h>
 #include <linux/cpu.h>
-#include <linux/irq.h>
 
 #include "internals.h"
 
@@ -96,30 +95,15 @@ cpumask_var_t irq_default_affinity;
  *	@irq:		Interrupt to check
  *
  */
-bool irq_can_set_affinity(unsigned int irq)
+int irq_can_set_affinity(unsigned int irq)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
 
 	if (!desc || !irqd_can_balance(&desc->irq_data) ||
 	    !desc->irq_data.chip || !desc->irq_data.chip->irq_set_affinity)
-		return false;
+		return 0;
 
-	return true;
-}
-
- /**
- * irq_can_set_affinity_usr - Check if affinity of a irq can be set from user space
- * @irq:	Interrupt to check
- *
- * Like irq_can_set_affinity() above, but additionally checks for the
- * AFFINITY_MANAGED flag.
- */
-bool irq_can_set_affinity_usr(unsigned int irq)
-{
-	struct irq_desc *desc = irq_to_desc(irq);
-
-	return irq_can_set_affinity(irq) &&
-		!irqd_affinity_is_managed(&desc->irq_data);
+	return 1;
 }
 
 /**
@@ -1319,7 +1303,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		if (new->flags & IRQF_PERF_CRITICAL)
 			setup_perf_irq_locked(desc);
 		else
-			setup_affinity(irq, desc, mask);
+			setup_affinity(desc, mask);
 
 	} else if (new->flags & IRQF_TRIGGER_MASK) {
 		unsigned int nmsk = new->flags & IRQF_TRIGGER_MASK;

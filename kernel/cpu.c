@@ -19,7 +19,6 @@
 #include <linux/mutex.h>
 #include <linux/gfp.h>
 #include <linux/suspend.h>
-#include <linux/interrupt.h>
 
 #include <trace/events/sched.h>
 
@@ -511,8 +510,8 @@ int disable_nonboot_cpus(void)
 {
 	int cpu, first_cpu, error = 0;
 
-	unaffine_perf_irqs();
 	cpu_maps_update_begin();
+	unaffine_perf_irqs();
 	first_cpu = cpumask_first(cpu_online_mask);
 	/*
 	 * We take down all of the non-boot CPUs in one shot to avoid races
