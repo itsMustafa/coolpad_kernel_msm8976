@@ -837,6 +837,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 
 		VM_BUG_ON(PageActive(page));
 		if (zone)
+			if (zone)
 			VM_BUG_ON(page_zone(page) != zone);
 
 		sc->nr_scanned++;
