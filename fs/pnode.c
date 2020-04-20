@@ -395,31 +395,12 @@ static void __propagate_umount(struct mount *mnt)
  */
 int propagate_umount(struct list_head *list)
 {
-	struct mount *mnt;
+	struct mount *parent = mnt->mnt_parent;
+	struct mount *p = mnt, *m;
 
 	list_for_each_entry(mnt, list, mnt_hash)
 		__propagate_umount(mnt);
 	return 0;
-}
-
-/*
- *  Iterates over all slaves, and slaves of slaves.
- */
-static struct mount *next_descendent(struct mount *root, struct mount *cur)
-{
-	if (!IS_MNT_NEW(cur) && !list_empty(&cur->mnt_slave_list))
-		return first_slave(cur);
-	do {
-		struct mount *master = cur->mnt_master;
-
-		if (!master || cur->mnt_slave.next != &master->mnt_slave_list) {
-			struct mount *next = next_slave(cur);
-
-			return (next == root) ? NULL : next;
-		}
-		cur = master;
-	} while (cur != root);
-	return NULL;
 }
 
 void propagate_remount(struct mount *mnt)
@@ -427,9 +408,12 @@ void propagate_remount(struct mount *mnt)
 	struct mount *m = mnt;
 	struct super_block *sb = mnt->mnt.mnt_sb;
 
-	if (sb->s_op->copy_mnt_data) {
-		m = next_descendent(mnt, m);
-		while (m) {
+	if (!sb->s_op->copy_mnt_data)
+		return;
+	for (p = propagation_next(parent, parent); p;
+				p = propagation_next(p, parent)) {
+		m = __lookup_mnt(&p->mnt, mnt->mnt_mountpoint, 0);
+		if (m)
 			sb->s_op->copy_mnt_data(m->mnt.data, mnt->mnt.data);
 			m = next_descendent(mnt, m);
 		}
