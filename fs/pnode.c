@@ -386,26 +386,10 @@ static void __propagate_umount(struct mount *mnt)
 	}
 }
 
-/*
- * collect all mounts that receive propagation from the mount in @list,
- * and return these additional mounts in the same list.
- * @list: the list of mounts to be unmounted.
- *
- * vfsmount lock must be held for write
- */
-int propagate_umount(struct list_head *list)
+void propagate_remount(struct mount *mnt)
 {
 	struct mount *parent = mnt->mnt_parent;
 	struct mount *p = mnt, *m;
-
-	list_for_each_entry(mnt, list, mnt_hash)
-		__propagate_umount(mnt);
-	return 0;
-}
-
-void propagate_remount(struct mount *mnt)
-{
-	struct mount *m = mnt;
 	struct super_block *sb = mnt->mnt.mnt_sb;
 
 	if (!sb->s_op->copy_mnt_data)
@@ -415,7 +399,5 @@ void propagate_remount(struct mount *mnt)
 		m = __lookup_mnt(&p->mnt, mnt->mnt_mountpoint, 0);
 		if (m)
 			sb->s_op->copy_mnt_data(m->mnt.data, mnt->mnt.data);
-			m = next_descendent(mnt, m);
-		}
 	}
 }
