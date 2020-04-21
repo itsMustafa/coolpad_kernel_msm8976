@@ -4339,7 +4339,7 @@ static int smbchg_set_optimal_charging_mode(struct smbchg_chip *chip, int type)
 static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 						enum power_supply_type type)
 {
-	int rc, current_limit_ma;
+	int rc, current_limit_ma = DEFAULT_SDP_MA;
 	union power_supply_propval propval;
 
 	/*
@@ -7882,6 +7882,8 @@ static int smbchg_probe(struct spmi_device *spmi)
 						rc);
 			return rc;
 		}
+	} else {
+		vadc_dev = NULL;
 	}
 
 	if (of_find_property(spmi->dev.of_node, "qcom,vchg_sns-vadc", NULL)) {
