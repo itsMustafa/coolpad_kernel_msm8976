@@ -4535,9 +4535,6 @@ static int tasha_codec_enable_prim_interpolator(
 	u16 ind = 0;
 
 	prim_int_reg = tasha_interp_get_primary_reg(reg, &ind);
-	if (!prim_int_reg) {
-		return -EINVAL;
-	}
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -4786,7 +4783,7 @@ static int tasha_codec_enable_mix_path(struct snd_soc_dapm_widget *w,
 	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
 	u16 gain_reg;
 	int offset_val = 0;
-	int val, ret;
+	int val = 0;
 
 	dev_dbg(codec->dev, "%s %d %s\n", __func__, event, w->name);
 
@@ -4927,12 +4924,7 @@ static int tasha_codec_enable_interpolator(struct snd_soc_dapm_widget *w,
 			set_bit(SB_CLK_GEAR, &tasha->status_mask);
 		}
 		/* Reset if needed */
-		ret = tasha_codec_enable_prim_interpolator(codec, reg, event);
-		if (ret) {
-			dev_err(codec->dev, "%s: enable_prim_interpolator fail\n",
-				__func__);
-			return ret;
-		}
+		tasha_codec_enable_prim_interpolator(codec, reg, event);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		tasha_config_compander(codec, w->shift, event);
@@ -4960,12 +4952,7 @@ static int tasha_codec_enable_interpolator(struct snd_soc_dapm_widget *w,
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		tasha_config_compander(codec, w->shift, event);
-		ret = tasha_codec_enable_prim_interpolator(codec, reg, event);
-		if (ret) {
-			dev_err(codec->dev, "%s: enable_prim_interpolator fail\n",
-				__func__);
-			return ret;
-		}
+		/* apply gain after int clk is enabled */
 		if ((tasha->spkr_gain_offset == RX_GAIN_OFFSET_M1P5_DB) &&
 		    (tasha->comp_enabled[COMPANDER_7] ||
 		     tasha->comp_enabled[COMPANDER_8]) &&
