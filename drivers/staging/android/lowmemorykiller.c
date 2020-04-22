@@ -500,11 +500,7 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 			continue;
 		if (selected) {
 			if (oom_score_adj < selected_oom_score_adj)
-#ifdef CONFIG_ANDROID_LMK_ADJ_RBTREE
-				break;
-#else
 				continue;
-#endif
 			if (oom_score_adj == selected_oom_score_adj &&
 			    tasksize <= selected_tasksize)
 				continue;
