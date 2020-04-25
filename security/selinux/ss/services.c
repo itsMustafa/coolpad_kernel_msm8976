@@ -143,7 +143,7 @@ static int selinux_set_mapping(struct policydb *pol,
 
 		p_out->value = string_to_security_class(pol, p_in->name);
 		if (!p_out->value) {
-			printk(KERN_INFO
+			printk(KERN_DEBUG
 			       "SELinux:  Class %s not defined in policy.\n",
 			       p_in->name);
 			if (pol->reject_unknown)

@@ -246,6 +246,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 		suspend_ops->wake();
 
 	thaw_fingerprintd();
+
 	dpm_resume_start(PMSG_RESUME);
 
  Platform_finish:

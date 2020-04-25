@@ -2343,7 +2343,7 @@ static int wcd_cpe_cmd_lsm_open_tx_v2(
 		return ret;
 
 	if (core->cal_data[WCD_CPE_LSM_CAL_TOPOLOGY_ID] == NULL) {
-		dev_err(core->dev,
+		dev_info(core->dev,
 			"%s: LSM_TOPOLOGY cal not allocated!\n",
 			__func__);
 		return -EINVAL;
@@ -2397,7 +2397,7 @@ static int wcd_cpe_cmd_lsm_open_tx_v2(
 	cmd_open_tx_v2.topology_id = lsm_top->topology;
 	ret = wcd_cpe_cmi_send_lsm_msg(core, session, &cmd_open_tx_v2);
 	if (ret)
-		dev_err(core->dev,
+		dev_dbg(core->dev,
 			"%s: failed to send open_tx_v2 cmd, err = %d\n",
 			__func__, ret);
 	else

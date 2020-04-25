@@ -2803,7 +2803,7 @@ static int __ref update_offline_cores(int val)
 			trace_thermal_pre_core_offline(cpu);
 			ret = cpu_down(cpu);
 			if (ret) {
-				pr_err_ratelimited(
+				pr_debug(
 					"Unable to offline CPU%d. err:%d\n",
 					cpu, ret);
 				pend_hotplug_req = true;
@@ -2826,7 +2826,7 @@ static int __ref update_offline_cores(int val)
 			} else if (ret) {
 				cpus_offlined |= BIT(cpu);
 				pend_hotplug_req = true;
-				pr_err_ratelimited(
+				pr_debug(
 					"Unable to online CPU%d. err:%d\n",
 					cpu, ret);
 			} else {
@@ -3450,8 +3450,8 @@ static int hotplug_notify(enum thermal_trip_type type, int temp, void *data)
 {
 	struct cpu_info *cpu_node = (struct cpu_info *)data;
 
-	pr_info_ratelimited("%s reach temp threshold: %d\n",
-			       cpu_node->sensor_type, temp);
+	pr_debug("%s reach temp threshold: %d\n",
+				cpu_node->sensor_type, temp);
 
 	if (!(msm_thermal_info.core_control_mask & BIT(cpu_node->cpu)))
 		return 0;
@@ -7738,7 +7738,7 @@ int __init msm_thermal_device_init(void)
 {
 	return platform_driver_register(&msm_thermal_device_driver);
 }
-arch_initcall(msm_thermal_device_init);
+subsys_initcall(msm_thermal_device_init);
 
 int __init msm_thermal_late_init(void)
 {
