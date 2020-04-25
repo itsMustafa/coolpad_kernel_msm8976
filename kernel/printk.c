@@ -574,6 +574,8 @@ static ssize_t devkmsg_writev(struct kiocb *iocb, const struct iovec *iv,
 			endp++;
 			len -= endp - line;
 			line = endp;
+			if (strstr(line, "init"))
+				goto free;
 		}
 	}
 	line[len] = '\0';
@@ -584,8 +586,8 @@ static ssize_t devkmsg_writev(struct kiocb *iocb, const struct iovec *iv,
 	}
 
 	printk_emit(facility, level, NULL, 0, "%s", line);
-out:
-	kfree(buf);
+out:  
+        kfree(buf);
 	return ret;
 }
 
