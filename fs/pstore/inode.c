@@ -382,10 +382,10 @@ int pstore_mkfile(enum pstore_type_id type, char *psname, u64 id, int count,
 	spin_unlock_irqrestore(&allpstore_lock, flags);
 
 #ifdef CONFIG_PSTORE_LAST_KMSG
-		if (record->type == PSTORE_TYPE_CONSOLE) {
-			console_buffer = record->buf;
-			console_bufsize = size;
-		}
+	if (type == PSTORE_TYPE_CONSOLE) {
+		console_buffer = private->data;
+		console_bufsize = size;
+	}
 #endif
 
 	mutex_unlock(&root->d_inode->i_mutex);
@@ -477,9 +477,10 @@ static int __init init_pstore_fs(void)
 
 #ifdef CONFIG_PSTORE_LAST_KMSG
 	last_kmsg_entry = proc_create_data("last_kmsg", S_IFREG | S_IRUGO,
-				NULL, &last_kmsg_fops, NULL);
+						NULL, &last_kmsg_fops, NULL);
 	if (!last_kmsg_entry) {
 		pr_err("Failed to create last_kmsg\n");
+		goto out;
 	}
 #endif
 
