@@ -18,7 +18,6 @@
 #include <linux/sched.h>
 #include <linux/sched/rt.h>
 #include <linux/task_work.h>
-#include <linux/cpu.h>
 
 #include "internals.h"
 
@@ -1179,10 +1178,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		}
 
 		/* Set default affinity mask once everything is setup */
-		if (new->flags & IRQF_PERF_CRITICAL)
-			setup_perf_irq_locked(desc);
-		else
-			setup_affinity(desc, mask);
+		setup_affinity(irq, desc, mask);
 
 	} else if (new->flags & IRQF_TRIGGER_MASK) {
 		unsigned int nmsk = new->flags & IRQF_TRIGGER_MASK;
