@@ -1178,7 +1178,14 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		}
 
 		/* Set default affinity mask once everything is setup */
+<<<<<<< HEAD
 		setup_affinity(irq, desc, mask);
+=======
+		if (new->flags & IRQF_PERF_CRITICAL)
+			setup_perf_irq_locked(desc);
+		else
+			setup_affinity(desc, mask);
+>>>>>>> parent of 5597ae1d79b... irq: Introduce IRQD_AFFINITY_MANAGED flag by nullbytepl
 
 	} else if (new->flags & IRQF_TRIGGER_MASK) {
 		unsigned int nmsk = new->flags & IRQF_TRIGGER_MASK;
