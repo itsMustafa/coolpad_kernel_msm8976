@@ -3887,6 +3887,19 @@ static void check_spread(struct cfs_rq *cfs_rq, struct sched_entity *se)
 #endif
 }
 
+static unsigned int Lgentle_fair_sleepers = 0;
+static unsigned int Larch_power = 0;
+
+void relay_gfs(unsigned int gfs)
+{
+	Lgentle_fair_sleepers = gfs;
+}
+
+void relay_ap(unsigned int ap)
+{
+	Larch_power = ap;
+}
+
 static void
 place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 {
@@ -3909,7 +3922,7 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 		 * Halve their sleep time's effect, to allow
 		 * for a gentler effect of sleepers:
 		 */
-		if (sched_feat(GENTLE_FAIR_SLEEPERS))
+		if (Lgentle_fair_sleepers)
 			thresh >>= 1;
 
 		vruntime -= thresh;
@@ -6733,7 +6746,7 @@ static void update_cpu_power(struct sched_domain *sd, int cpu)
 		if (sched_feat(ARCH_POWER))
 			power *= arch_scale_smt_power(sd, cpu);
 		else
-			power *= default_scale_smt_power(sd, cpu);
+			power *= default_scale_smt_power(sd, cpu)
 
 		power >>= SCHED_POWER_SHIFT;
 	}
@@ -6746,7 +6759,6 @@ static void update_cpu_power(struct sched_domain *sd, int cpu)
 		power *= default_scale_freq_power(sd, cpu);
 
 	power >>= SCHED_POWER_SHIFT;
-
 	power *= scale_rt_power(cpu);
 	power >>= SCHED_POWER_SHIFT;
 
