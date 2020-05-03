@@ -3923,7 +3923,7 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 		 * for a gentler effect of sleepers:
 		 */
 		if (Lgentle_fair_sleepers)
-			thresh >>= 1;
+			thresh >>= 0;
 
 		vruntime -= thresh;
 	}
