@@ -48,7 +48,7 @@
 #define QSCRATCH_CGCTL_REG_OFFSET	0x1c
 
 #define ENABLE_EVENT_LOG 1
-static unsigned int enable_event_log = ENABLE_EVENT_LOG;
+static unsigned int enable_event_log;
 module_param(enable_event_log, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(enable_event_log, "enable event logging in debug buffer");
 
